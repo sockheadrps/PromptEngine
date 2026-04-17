@@ -1,8 +1,19 @@
 # prompt_engine
 
-A small, composable library for building prompts, routing requests through
-named strategies, and generating with pluggable providers. The engine is
-domain-agnostic — it provides the pieces, you assemble them.
+A small, composable library for apps that send more than one kind of prompt
+to an LLM. Define named **routes** (e.g. `analyst`, `creative`, `json_extract`)
+that each compose their own system + user prompt, sampling params, and
+output-validation policy. Layer transient **context overlays** on top of a
+long-lived base context to steer a single run without rewriting it. Attach
+stackable **injections** (e.g. `tighten`, `json_only`) for cross-cutting
+style/format tweaks. Swap providers (Ollama, mock, or your own) without
+touching the rest.
+
+Good fit for: multi-mode assistants, agents that switch strategies per
+task, prompt A/B testing, iterative refinement loops where each user
+follow-up becomes a reusable overlay, and any app where prompt-construction
+logic has outgrown f-strings. Domain-agnostic — the library ships the
+pieces, you decide what they mean.
 
 See [`PROMPT_ENGINE_DESIGN.md`](PROMPT_ENGINE_DESIGN.md) for design rationale.
 A browser-based test bench built on top of the library lives on the
@@ -31,6 +42,8 @@ package into your project, or install from source.
 | `OutputProcessor`        | Cleans and validates model output against a policy (strip fences, regex, etc). |
 | `RecentOutputMemory`     | Bounded log used to detect near-duplicate outputs (Jaccard).                |
 | `RunHistory`             | Bounded log of full runs `{request, output, accepted, route, at}` for replay. |
+| `TemplateRenderer`       | Small `{slot}` substitution for parameterised base contexts / overlays.     |
+| `RandomSource`           | Injectable RNG (`DefaultRandom`, `SeededRandom`) used by example/nudge pools. |
 | `PromptEngine`           | Glues it together. `generate_once(request)` is the single entry point.      |
 
 ## Minimal example
@@ -155,7 +168,43 @@ PromptRoute(
 ```
 
 Section callables receive a `BuildContext` and return a string. Return `""`
-to omit the section. That's the whole extension point.
+to omit the section. That's the whole extension point for `CompositeBuilder`.
+For anything more elaborate, implement the `PromptBuilder` protocol — a
+single method, `build(ctx: BuildContext) -> PromptPackage`.
+
+## Templating
+
+`TemplateRenderer` does small-footprint `{slot}` substitution, useful when
+a base context or overlay has parameterised values:
+
+```python
+from prompt_engine import TemplateRenderer, TemplateField
+
+renderer = TemplateRenderer()
+rendered = renderer.render(
+    "You advise {user_name} about {topic}.",
+    fields=[
+        TemplateField(key="user_name", value="Kara"),
+        TemplateField(key="topic", value="billing disputes", aliases=("subject",)),
+    ],
+)
+```
+
+Missing slots can auto-append as trailing sentences, whitespace is
+normalised, and `aliases` let one value resolve multiple slot names.
+
+## Reproducibility
+
+Pick examples and nudges deterministically by passing a seeded RNG:
+
+```python
+from prompt_engine import SeededRandom
+
+engine = PromptEngine(..., random=SeededRandom(42))
+```
+
+Useful for tests, golden-output fixtures, and A/B comparing prompt changes
+without sampling noise swamping the signal.
 
 ## Injections
 
