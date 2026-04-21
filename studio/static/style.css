@@ -744,6 +744,7 @@ button.small { padding: 4px 8px; font-size: 12px; }
   gap: 6px;
 }
 .overlay-form textarea { grid-column: 1 / 3; }
+.overlay-form select { grid-column: 1 / 3; }
 .overlay-form .actions { grid-column: 1 / 3; }
 
 .iterate-strip { margin-top: 14px; display: flex; flex-direction: column; gap: 6px; }
@@ -999,3 +1000,12 @@ details summary:hover { color: var(--text); }
   main.grid { grid-template-columns: 1fr; grid-template-rows: none; height: auto; overflow: visible; }
   .controls-panel, .output-panel, .debug-panel { grid-row: auto; grid-column: auto; max-height: none; }
 }
+
+.py-hl { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.py-hl .k  { color: #ff8ad1; }
+.py-hl .s  { color: #a8e89a; }
+.py-hl .c  { color: #6b7789; font-style: italic; }
+.py-hl .n  { color: #f7c873; }
+.py-hl .b  { color: #8df0c2; }
+.py-hl .f  { color: #6cb1ff; }
+.py-hl .d  { color: #c9a6ff; }

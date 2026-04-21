@@ -24,6 +24,7 @@ from .output.history import RunHistory, RunRecord
 from .runtime.trace import GenerationTrace, GenerationAttempt
 from .runtime.engine import PromptEngine, GenerationResult, GenerationChunk
 from .runtime.middleware import apply_before, apply_after
+from .export import export_python
 
 __all__ = [
     "GenerationConfig",
@@ -68,4 +69,5 @@ __all__ = [
     "GenerationChunk",
     "apply_before",
     "apply_after",
+    "export_python",
 ]

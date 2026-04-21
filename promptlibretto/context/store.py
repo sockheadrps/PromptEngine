@@ -76,6 +76,11 @@ class ContextStore:
         ordered = sorted(live.items(), key=lambda kv: kv[1].priority, reverse=True)
         sections = [rendered_base] if rendered_base else []
         for _, overlay in ordered:
+            # Runtime-tagged overlays are design-time placeholders. Their
+            # text is meant to be replaced at call time; skip until then.
+            mode = str((overlay.metadata or {}).get("runtime") or "").lower()
+            if mode in ("optional", "required"):
+                continue
             text = overlay.text.strip()
             if text:
                 sections.append(text)

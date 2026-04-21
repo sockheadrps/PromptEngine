@@ -23,10 +23,12 @@ from promptlibretto import (
     PromptEngine,
     RecentOutputMemory,
     RunHistory,
+    export_python,
     make_turn_overlay,
 )
 
 from .base_library import BaseLibrary
+from .export_library import ExportLibrary
 from .middleware import LatencyLogger
 from .presets import build_asset_registry, build_router
 from .scenario_library import ScenarioLibrary
@@ -77,13 +79,27 @@ def _data_dir() -> Path:
     if override:
         path = Path(override)
     else:
-        path = Path.home() / ".promptlibretto" / "testbench"
+        path = Path.home() / ".promptlibretto" / "studio"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _exports_dir() -> Path:
+    """Exports live next to the user's project by default, so `.py` files
+    land somewhere useful. Override with PROMPTLIBRETTO_EXPORT_DIR to point
+    at e.g. ./src/myapp/prompts/."""
+    override = os.environ.get("PROMPTLIBRETTO_EXPORT_DIR")
+    if override:
+        path = Path(override)
+    else:
+        path = Path.cwd() / "promptlibretto_exports"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
 _LIBRARY_PATH = _data_dir() / "base_library.json"
 _SCENARIO_PATH = _data_dir() / "scenario_library.json"
+_EXPORTS_PATH = _exports_dir()
 
 
 @asynccontextmanager
@@ -93,6 +109,7 @@ async def lifespan(app: FastAPI):
     app.state.latency = latency
     app.state.base_library = BaseLibrary(_LIBRARY_PATH)
     app.state.scenario_library = ScenarioLibrary(_SCENARIO_PATH)
+    app.state.export_library = ExportLibrary(_EXPORTS_PATH)
     try:
         yield
     finally:
@@ -101,7 +118,7 @@ async def lifespan(app: FastAPI):
             await provider.aclose()
 
 
-app = FastAPI(title="promptlibretto test bench", lifespan=lifespan)
+app = FastAPI(title="promptlibretto studio", lifespan=lifespan)
 
 
 class GenerateRequest(BaseModel):
@@ -110,6 +127,7 @@ class GenerateRequest(BaseModel):
     injections: list[str] = Field(default_factory=list)
     debug: bool = True
     config_overrides: dict[str, Any] = Field(default_factory=dict)
+    section_overrides: dict[str, str] = Field(default_factory=dict)
 
 
 class OverlayBody(BaseModel):
@@ -557,6 +575,115 @@ def revert_overlay(name: str):
     return {"ok": True, "name": name, "text": verbatim}
 
 
+class ExportBody(BaseModel):
+    route: Optional[str] = None
+    injections: list[str] = Field(default_factory=list)
+    include_overlays: bool = True
+
+
+class SaveExportBody(BaseModel):
+    code: str
+    scenario: Optional[dict[str, Any]] = None
+
+
+def _exports() -> ExportLibrary:
+    lib = getattr(app.state, "export_library", None)
+    if lib is None:
+        raise HTTPException(status_code=503, detail="export library not initialised")
+    return lib
+
+
+class ResolveBody(BaseModel):
+    mode: Optional[str] = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    injections: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/prompt/resolve")
+def resolve_prompt(body: ResolveBody):
+    """Build the package without calling the provider. Used by the studio's
+    prompt-edit panel to prefill the resolved system/user text."""
+    from promptlibretto.builders.builder import BuildContext
+
+    eng = _engine()
+    req = GenerationRequest(
+        mode=body.mode, inputs=body.inputs, injections=list(body.injections), debug=False
+    )
+    snapshot = eng.context_store.get_state()
+    route = eng.router.select(snapshot, req)
+    if route is None:
+        raise HTTPException(status_code=400, detail="no route selected")
+    materialized = eng._materialize_injections(req.injections)
+    ctx = BuildContext(
+        snapshot=snapshot,
+        request=req,
+        assets=eng.asset_registry,
+        random=eng.random,
+        injections=materialized,
+    )
+    pkg = route.builder.build(ctx)
+    return {
+        "route": route.name,
+        "system": pkg.system or "",
+        "user": pkg.user or "",
+    }
+
+
+@app.post("/api/export")
+def export_route(body: ExportBody):
+    eng = _engine()
+    try:
+        code = export_python(
+            eng,
+            route=body.route,
+            injections=tuple(body.injections),
+            include_overlays=body.include_overlays,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"code": code, "dir": str(_EXPORTS_PATH)}
+
+
+@app.get("/api/exports")
+def list_exports():
+    rows = _exports().list()
+    scenario_names = {r["name"] for r in _scenarios().list()}
+    for r in rows:
+        r["has_scenario"] = r["name"] in scenario_names
+    return {"exports": rows, "dir": str(_EXPORTS_PATH)}
+
+
+@app.get("/api/exports/{name}")
+def get_export(name: str):
+    row = _exports().get(name)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"no export named {name!r}")
+    return row
+
+
+@app.put("/api/exports/{name}")
+def save_export(name: str, body: SaveExportBody):
+    try:
+        row = _exports().save(name, body.code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    scenario_saved = False
+    if body.scenario is not None:
+        try:
+            _scenarios().save(name, body.scenario)
+            scenario_saved = True
+        except ValueError:
+            pass
+    return {"ok": True, "entry": row, "scenario_saved": scenario_saved}
+
+
+@app.delete("/api/exports/{name}")
+def delete_export(name: str):
+    if not _exports().delete(name):
+        raise HTTPException(status_code=404, detail=f"no export named {name!r}")
+    return {"ok": True}
+
+
 @app.post("/api/generate")
 async def generate(body: GenerateRequest):
     eng = _engine()
@@ -569,6 +696,7 @@ async def generate(body: GenerateRequest):
                 injections=body.injections,
                 debug=body.debug,
                 config_overrides=body.config_overrides,
+                section_overrides=body.section_overrides,
             )
         )
     except httpx.HTTPError as exc:
@@ -609,6 +737,7 @@ async def generate_stream(body: GenerateRequest):
                 injections=body.injections,
                 debug=body.debug,
                 config_overrides=body.config_overrides,
+                section_overrides=body.section_overrides,
             )
             async for chunk in eng.generate_stream(request):
                 if chunk.done:

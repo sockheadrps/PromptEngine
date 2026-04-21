@@ -1,4 +1,4 @@
-// Prompt Engine test bench — talks to the FastAPI server.
+// promptlibretto studio — talks to the FastAPI server.
 const $ = (id) => document.getElementById(id);
 
 // --- minimal, safe markdown renderer -------------------------------
@@ -279,11 +279,30 @@ const els = {
   overlayName: $("overlay-name"),
   overlayPriority: $("overlay-priority"),
   overlayText: $("overlay-text"),
+  overlayRuntime: $("overlay-runtime"),
   addOverlay: $("add-overlay"),
   clearOverlays: $("clear-overlays"),
   runHistory: $("run-history"),
   clearRecent: $("clear-recent"),
   generate: $("generate-btn"),
+  editPromptBtn: $("edit-prompt-btn"),
+  editPromptModal: $("edit-prompt-modal"),
+  editSystem: $("edit-system"),
+  editUser: $("edit-user"),
+  editApply: $("edit-prompt-apply"),
+  editClear: $("edit-prompt-clear"),
+  editReset: $("edit-prompt-reset"),
+  sectionOverrideBanner: $("section-override-banner"),
+  clearSectionOverride: $("clear-section-override"),
+  exportBtn: $("export-btn"),
+  exportModal: $("export-modal"),
+  exportCode: $("export-code"),
+  exportCopy: $("export-copy"),
+  exportName: $("export-name"),
+  exportSave: $("export-save"),
+  exportDownload: $("export-download"),
+  exportDir: $("export-dir"),
+  exportSavedList: $("export-saved-list"),
   debug: $("debug-toggle"),
   stream: $("stream-toggle"),
   outputRendered: $("output-rendered"),
@@ -514,6 +533,12 @@ function renderOverlays(state) {
     card.dataset.name = name;
     card.dataset.metadata = JSON.stringify(o.metadata || {});
     if (openNames.has(name)) card.open = true;
+    const runtimeMode = String((o.metadata || {}).runtime || "").toLowerCase();
+    const runtimeBadge = runtimeMode === "required"
+      ? ` <span class="turn-badge" title="required runtime slot in exported run()">runtime: required</span>`
+      : runtimeMode === "optional"
+      ? ` <span class="turn-badge" title="optional runtime slot in exported run()">runtime: optional</span>`
+      : "";
     const isTurn = (o.metadata || {}).kind === "turn";
     const hasVerbatim = !!(o.metadata || {}).verbatim;
     const isCompacted = isTurn && !!(o.metadata || {}).compacted;
@@ -529,7 +554,7 @@ function renderOverlays(state) {
     card.innerHTML = `
       <summary>
         <span class="chevron">▸</span>
-        <span class="name">${escapeHtml(name)}${isTurn ? ` <span class="turn-badge" title="iteration turn overlay">turn</span>` : ""} <small class="muted overlay-priority-badge">·p${o.priority}</small></span>
+        <span class="name">${escapeHtml(name)}${isTurn ? ` <span class="turn-badge" title="iteration turn overlay">turn</span>` : ""}${runtimeBadge} <small class="muted overlay-priority-badge">·p${o.priority}</small></span>
         <span class="text">${escapeHtml(o.text)}</span>
         <button class="remove" type="button" title="remove">×</button>
       </summary>
@@ -541,6 +566,14 @@ function renderOverlays(state) {
         <label class="overlay-edit-field">
           <span>text</span>
           <textarea class="edit-text" rows="3">${escapeHtml(o.text)}</textarea>
+        </label>
+        <label class="overlay-edit-field" title="In an exported run() wrapper, runtime slots become function arguments. Required raises ValueError if empty.">
+          <span>runtime</span>
+          <select class="edit-runtime">
+            <option value="" ${runtimeMode === "" ? "selected" : ""}>fixed (set at export time)</option>
+            <option value="optional" ${runtimeMode === "optional" ? "selected" : ""}>runtime — optional</option>
+            <option value="required" ${runtimeMode === "required" ? "selected" : ""}>runtime — required</option>
+          </select>
         </label>
         <div class="overlay-edit-status muted"><span class="save-state"></span></div>
         ${turnActions}
@@ -555,8 +588,13 @@ function renderOverlays(state) {
       card.classList.add("dirty");
       statusEl.textContent = "unsaved…";
     };
+    const runtimeEl = card.querySelector(".edit-runtime");
     priorityEl.addEventListener("input", markDirty);
     textEl.addEventListener("input", markDirty);
+    if (runtimeEl) runtimeEl.addEventListener("change", () => {
+      markDirty();
+      saveOverlayCard(card);
+    });
     // `change` fires on blur for priority, and committing text
     priorityEl.addEventListener("change", () => saveOverlayCard(card));
     textEl.addEventListener("change", () => saveOverlayCard(card));
@@ -619,6 +657,13 @@ function saveOverlayCard(card) {
   // (or verbatim, if never compacted) form; keep metadata intact.
   if (metadata && typeof metadata === "object" && metadata.kind === "turn") {
     if ("compacted" in metadata) metadata = { ...metadata, compacted: text };
+  }
+  const runtimeSel = card.querySelector(".edit-runtime");
+  if (runtimeSel) {
+    const v = runtimeSel.value;
+    metadata = { ...(metadata || {}) };
+    if (v === "optional" || v === "required") metadata.runtime = v;
+    else delete metadata.runtime;
   }
   const p = api("PUT", `/api/context/overlay/${encodeURIComponent(name)}`, {
     text, priority, expires_at: null, metadata,
@@ -878,6 +923,195 @@ function formatUsageTiming(usage, timing) {
   return lines.length ? lines.join("\n") : "(no usage/timing reported)";
 }
 
+const PY_KEYWORDS = new Set([
+  "False","None","True","and","as","assert","async","await","break","class","continue",
+  "def","del","elif","else","except","finally","for","from","global","if","import","in",
+  "is","lambda","nonlocal","not","or","pass","raise","return","try","while","with","yield",
+]);
+const PY_BUILTINS = new Set([
+  "print","len","range","str","int","float","dict","list","tuple","set","bool","type",
+  "isinstance","hasattr","getattr","setattr","enumerate","zip","map","filter","sum","min","max",
+  "sorted","open","repr","id","iter","next","any","all","abs","object",
+]);
+
+function highlightPython(src) {
+  const tokenRe = /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|#[^\n]*|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b|[^\s])/g;
+  let out = "";
+  let last = 0;
+  let prev = "";
+  src.replace(tokenRe, (tok, _g, idx) => {
+    out += escapeHtml(src.slice(last, idx));
+    last = idx + tok.length;
+    let cls = null;
+    if (tok.startsWith("#")) cls = "c";
+    else if (/^["']/.test(tok)) cls = "s";
+    else if (/^\d/.test(tok)) cls = "n";
+    else if (/^[A-Za-z_]/.test(tok)) {
+      if (PY_KEYWORDS.has(tok)) cls = "k";
+      else if (PY_BUILTINS.has(tok)) cls = "b";
+      else if (prev === "def" || prev === "class") cls = "f";
+      else if (prev === "@") cls = "d";
+    }
+    out += cls ? `<span class="${cls}">${escapeHtml(tok)}</span>` : escapeHtml(tok);
+    if (!/^\s+$/.test(tok)) prev = tok;
+    return tok;
+  });
+  out += escapeHtml(src.slice(last));
+  return out;
+}
+
+function setExportCode(code) {
+  els.exportCode.dataset.raw = code;
+  els.exportCode.classList.add("py-hl");
+  els.exportCode.innerHTML = highlightPython(code);
+}
+
+function suggestExportName() {
+  if (currentScenarioName) return currentScenarioName;
+  const route = els.routeSelect.value || "";
+  return route ? `${route}_export` : "export";
+}
+
+async function exportPython() {
+  const route = els.routeSelect.value || null;
+  const injections = selectedInjections();
+  els.exportBtn.disabled = true;
+  try {
+    const res = await fetch("/api/export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ route, injections, include_overlays: true }),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      const msg = `# export failed (${res.status})\n${detail}`;
+      els.exportCode.dataset.raw = msg;
+      els.exportCode.textContent = msg;
+    } else {
+      const { code, dir } = await res.json();
+      setExportCode(code);
+      if (dir && els.exportDir) els.exportDir.textContent = dir;
+    }
+    if (!els.exportName.value.trim()) els.exportName.value = suggestExportName();
+    els.exportModal.hidden = false;
+    refreshSavedExports();
+  } catch (err) {
+    const msg = `# export failed\n${err}`;
+    els.exportCode.dataset.raw = msg;
+    els.exportCode.textContent = msg;
+    els.exportModal.hidden = false;
+  } finally {
+    els.exportBtn.disabled = false;
+  }
+}
+
+function closeExport() {
+  els.exportModal.hidden = true;
+}
+
+async function copyExport() {
+  try {
+    await navigator.clipboard.writeText(els.exportCode.dataset.raw || els.exportCode.textContent || "");
+    const original = els.exportCopy.textContent;
+    els.exportCopy.textContent = "Copied ✓";
+    setTimeout(() => (els.exportCopy.textContent = original), 1200);
+  } catch {
+    els.exportCopy.textContent = "Copy failed";
+  }
+}
+
+function downloadExport() {
+  const code = els.exportCode.dataset.raw || "";
+  if (!code) return;
+  const name = (els.exportName.value.trim() || suggestExportName()).replace(/[^A-Za-z0-9_.-]+/g, "_") || "export";
+  const blob = new Blob([code], { type: "text/x-python" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${name}.py`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function saveExport() {
+  const name = els.exportName.value.trim();
+  if (!name) { els.exportName.focus(); return; }
+  const code = els.exportCode.dataset.raw || "";
+  if (!code) return;
+  els.exportSave.disabled = true;
+  try {
+    const scenario = (typeof captureScenarioState === "function")
+      ? captureScenarioState()
+      : null;
+    await api("PUT", `/api/exports/${encodeURIComponent(name)}`, { code, scenario });
+    const original = els.exportSave.textContent;
+    els.exportSave.textContent = "Saved ✓";
+    setTimeout(() => (els.exportSave.textContent = original), 1200);
+    refreshSavedExports();
+  } catch (err) {
+    alert("Save failed: " + err.message);
+  } finally {
+    els.exportSave.disabled = false;
+  }
+}
+
+async function refreshSavedExports() {
+  try {
+    const { exports = [] } = await api("GET", "/api/exports");
+    const host = els.exportSavedList;
+    host.innerHTML = "";
+    if (!exports.length) {
+      host.innerHTML = `<div class="library-empty">No saved exports yet.</div>`;
+      return;
+    }
+    for (const row of exports) {
+      const card = document.createElement("div");
+      card.className = "library-item";
+      const saved = new Date((row.saved_at || 0) * 1000);
+      const scenarioBtn = row.has_scenario
+        ? `<button type="button" class="ghost small" data-act="load-scenario" title="Restore the studio state captured when this export was saved">Load scenario</button>`
+        : "";
+      card.innerHTML = `
+        <div class="item-head">
+          <span class="item-name">${escapeHtml(row.name)}${row.has_scenario ? ` <small class="muted">· scenario</small>` : ""}</span>
+          <span class="item-date">${escapeHtml(saved.toLocaleString())}</span>
+        </div>
+        <div class="item-actions">
+          <button type="button" class="primary small" data-act="load">Load</button>
+          ${scenarioBtn}
+          <button type="button" class="ghost small" data-act="delete">Delete</button>
+        </div>`;
+      card.querySelector("[data-act='load']").addEventListener("click", async () => {
+        try {
+          const entry = await api("GET", `/api/exports/${encodeURIComponent(row.name)}`);
+          setExportCode(entry.code || "");
+          els.exportName.value = row.name;
+        } catch (err) { alert("Load failed: " + err.message); }
+      });
+      const scEl = card.querySelector("[data-act='load-scenario']");
+      if (scEl) scEl.addEventListener("click", async () => {
+        try {
+          const entry = await api("GET", `/api/scenarios/${encodeURIComponent(row.name)}`);
+          await applyScenarioState(entry.state || {});
+          els.exportModal.hidden = true;
+        } catch (err) { alert("Scenario load failed: " + err.message); }
+      });
+      card.querySelector("[data-act='delete']").addEventListener("click", async () => {
+        if (!confirm(`Delete export "${row.name}"?`)) return;
+        try {
+          await api("DELETE", `/api/exports/${encodeURIComponent(row.name)}`);
+          refreshSavedExports();
+        } catch (err) { alert("Delete failed: " + err.message); }
+      });
+      host.appendChild(card);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 async function generate() {
   els.generate.disabled = true;
   setOutputText("", "Generating…");
@@ -890,6 +1124,7 @@ async function generate() {
       debug: els.debug.checked,
       config_overrides: readConfigOverrides(),
     };
+    if (pendingSectionOverrides) request.section_overrides = pendingSectionOverrides;
     const result = els.stream.checked
       ? await generateStream(request)
       : await api("POST", "/api/generate", request);
@@ -1084,6 +1319,71 @@ function captureScenarioState() {
 }
 
 let lastRecentSnapshot = [];
+let currentScenarioName = "";
+let pendingSectionOverrides = null;
+
+function updateSectionOverrideBanner() {
+  const has = pendingSectionOverrides && Object.keys(pendingSectionOverrides).length > 0;
+  els.sectionOverrideBanner.hidden = !has;
+}
+
+async function fetchResolvedPrompt() {
+  const res = await fetch("/api/prompt/resolve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      mode: els.routeSelect.value || null,
+      inputs: { input: els.inputText.value || "" },
+      injections: selectedInjections(),
+    }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function openEditPrompt() {
+  try {
+    if (pendingSectionOverrides) {
+      els.editSystem.value = pendingSectionOverrides.system ?? "";
+      els.editUser.value = pendingSectionOverrides.user ?? "";
+    } else {
+      const { system, user } = await fetchResolvedPrompt();
+      els.editSystem.value = system || "";
+      els.editUser.value = user || "";
+    }
+    els.editPromptModal.hidden = false;
+  } catch (err) {
+    alert("Couldn't resolve prompt: " + err.message);
+  }
+}
+
+function closeEditPrompt() {
+  els.editPromptModal.hidden = true;
+}
+
+function applyEditPrompt() {
+  pendingSectionOverrides = {
+    system: els.editSystem.value,
+    user: els.editUser.value,
+  };
+  updateSectionOverrideBanner();
+  closeEditPrompt();
+}
+
+function clearSectionOverride() {
+  pendingSectionOverrides = null;
+  updateSectionOverrideBanner();
+}
+
+async function resetEditPrompt() {
+  try {
+    const { system, user } = await fetchResolvedPrompt();
+    els.editSystem.value = system || "";
+    els.editUser.value = user || "";
+  } catch (err) {
+    alert("Reload failed: " + err.message);
+  }
+}
 
 async function applyScenarioState(state) {
   if (!state || typeof state !== "object") return;
@@ -1149,6 +1449,7 @@ function openScenariosDialog() {
       await flushOverlayEdits();
       const state = captureScenarioState();
       await api("PUT", `/api/scenarios/${encodeURIComponent(name)}`, { state });
+      currentScenarioName = name;
       title.value = "";
       await refreshList();
     } catch (err) { alert("Save failed: " + err.message); }
@@ -1181,6 +1482,7 @@ function renderScenarioList(host, items) {
       try {
         const row = await api("GET", `/api/scenarios/${encodeURIComponent(item.name)}`);
         await applyScenarioState(row.state || {});
+        currentScenarioName = item.name;
         closeModal();
       } catch (err) { alert("Load failed: " + err.message); }
     });
@@ -1204,12 +1506,17 @@ async function addOverlay() {
   const text = els.overlayText.value.trim();
   if (!text) return alert("overlay needs text");
   const priority = parseInt(els.overlayPriority.value || "0", 10) || 0;
+  const runtimeMode = els.overlayRuntime ? els.overlayRuntime.value : "";
+  const metadata = (runtimeMode === "optional" || runtimeMode === "required")
+    ? { runtime: runtimeMode }
+    : {};
   await flushOverlayEdits();
   await api("PUT", `/api/context/overlay/${encodeURIComponent(name)}`, {
-    text, priority, expires_at: null, metadata: {},
+    text, priority, expires_at: null, metadata,
   });
   els.overlayName.value = "";
   els.overlayText.value = "";
+  if (els.overlayRuntime) els.overlayRuntime.value = "";
   await refresh();
 }
 
@@ -1434,6 +1741,22 @@ $("iterate-verbatim").addEventListener("click", () => iterate("verbatim"));
 $("iterate-compact").addEventListener("click", () => iterate("compact"));
 
 els.generate.addEventListener("click", generate);
+els.editPromptBtn.addEventListener("click", openEditPrompt);
+els.editApply.addEventListener("click", applyEditPrompt);
+els.editClear.addEventListener("click", () => { clearSectionOverride(); closeEditPrompt(); });
+els.editReset.addEventListener("click", resetEditPrompt);
+els.editPromptModal.querySelectorAll("[data-close-edit-prompt]").forEach((el) =>
+  el.addEventListener("click", closeEditPrompt)
+);
+els.clearSectionOverride.addEventListener("click", (e) => { e.preventDefault(); clearSectionOverride(); });
+els.exportBtn.addEventListener("click", exportPython);
+els.exportCopy.addEventListener("click", copyExport);
+els.exportSave.addEventListener("click", saveExport);
+els.exportDownload.addEventListener("click", downloadExport);
+els.exportName.addEventListener("keydown", (e) => { if (e.key === "Enter") saveExport(); });
+els.exportModal.querySelectorAll("[data-close-export]").forEach((el) =>
+  el.addEventListener("click", closeExport)
+);
 els.saveBase.addEventListener("click", saveBase);
 $("save-base-as").addEventListener("click", openSaveAsDialog);
 $("load-base").addEventListener("click", openLoadDialog);

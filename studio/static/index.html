@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Prompt Engine — Test Bench</title>
+  <title>promptlibretto studio</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   <header>
-    <h1>Prompt Engine Test Bench</h1>
+    <h1>promptlibretto studio</h1>
     <div class="header-right">
       <button id="scenarios-btn" type="button" class="ghost-action">Scenarios</button>
       <button id="example-btn" type="button" class="example">Load Example Scenario</button>
@@ -39,8 +39,14 @@
       <div class="tab-panel" data-tab="compose" role="tabpanel">
         <label class="field">
           <span class="field-label">Route <button class="help" type="button" data-help="route">?</button></span>
-          <select id="route-select"></select>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="route-select" style="flex:1"></select>
+            <button id="edit-prompt-btn" type="button" class="ghost-action small" title="Edit the resolved prompt for the next run (not persisted)">Edit prompt</button>
+          </div>
           <small id="route-desc" class="muted"></small>
+          <small id="section-override-banner" class="muted" hidden style="color:var(--warn)">
+            ⚠ Custom prompt active for next run — <a href="#" id="clear-section-override">clear</a>
+          </small>
         </label>
 
         <label class="field">
@@ -91,6 +97,11 @@
           <input id="overlay-name" placeholder="overlay name" />
           <input id="overlay-priority" type="number" placeholder="priority" value="10" />
           <textarea id="overlay-text" rows="2" placeholder="overlay text…"></textarea>
+          <select id="overlay-runtime" title="In an exported run() wrapper, runtime slots become function arguments. Required raises ValueError if empty.">
+            <option value="">fixed (set at export time)</option>
+            <option value="optional">runtime — optional</option>
+            <option value="required">runtime — required</option>
+          </select>
           <div class="actions">
             <button id="add-overlay" type="button">Add / Replace</button>
             <button id="clear-overlays" type="button" class="ghost">Clear All</button>
@@ -117,6 +128,7 @@
           <span class="switch-label">stream</span>
         </label>
         <button class="help" type="button" data-help="debug">?</button>
+        <button id="export-btn" type="button" class="ghost-action" title="Export the current route + context as runnable Python">Export as Python</button>
         <button id="generate-btn" type="button" class="primary-action">Generate ⏎</button>
       </header>
       <div class="output-meta">
@@ -195,6 +207,57 @@
         <button class="modal-close" type="button" data-close aria-label="Close">×</button>
       </header>
       <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Edit-prompt modal -->
+  <div id="edit-prompt-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-edit-prompt></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="edit-prompt-title">
+      <header>
+        <h3 id="edit-prompt-title">Edit resolved prompt (next run only)</h3>
+        <button class="modal-close" type="button" data-close-edit-prompt aria-label="Close">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">These replace the route's built prompt for the next generation only. Nothing is written back to the route. Clear to restore normal builder output.</p>
+        <label class="field">
+          <span class="field-label">System prompt</span>
+          <textarea id="edit-system" rows="8" placeholder="(empty — no system prompt)"></textarea>
+        </label>
+        <label class="field">
+          <span class="field-label">User prompt</span>
+          <textarea id="edit-user" rows="10"></textarea>
+        </label>
+        <div class="actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+          <button id="edit-prompt-reset" type="button" class="ghost-action">Reload from route</button>
+          <button id="edit-prompt-clear" type="button" class="ghost-action">Clear override</button>
+          <button id="edit-prompt-apply" type="button" class="primary-action">Use for next run</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export modal -->
+  <div id="export-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-export></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="export-modal-title">
+      <header>
+        <h3 id="export-modal-title">Export as Python</h3>
+        <button class="modal-close" type="button" data-close-export aria-label="Close">×</button>
+      </header>
+      <div class="modal-body">
+        <p class="muted">Copy-paste into your app, download the <code>.py</code>, or save by name to <code id="export-dir">./promptlibretto_exports/</code> (the directory where you launched the studio). Override with <code>PROMPTLIBRETTO_EXPORT_DIR</code>.</p>
+        <pre id="export-code" class="trace" style="max-height:50vh;overflow:auto"></pre>
+        <div class="actions" style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+          <input id="export-name" placeholder="export name (e.g. analyst_v1)" style="flex:1;min-width:180px" />
+          <button id="export-save" type="button" class="ghost-action">Save to disk</button>
+          <button id="export-download" type="button" class="ghost-action">Download</button>
+          <span class="spacer"></span>
+          <button id="export-copy" type="button" class="primary-action">Copy</button>
+        </div>
+        <div class="subhead" style="margin-top:12px"><span>Saved exports</span></div>
+        <div id="export-saved-list" class="run-history"></div>
+      </div>
     </div>
   </div>
 
