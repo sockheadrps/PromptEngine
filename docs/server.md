@@ -1,194 +1,202 @@
-# Test Bench Server
+# promptlibretto studio
 
-A browser UI over the `promptlibretto` library. FastAPI backend, vanilla
-JS frontend, one engine per process. Exists to exercise every surface of
-the library (routes, overlays, injections, run history, iteration turns,
-streaming, middleware, budget) against a local model.
+A browser-based prompt designer for the `promptlibretto` library. Tune
+your routes, base context, overlays, and injections against a live model,
+then **Export as Python** to drop the exact configuration into your app.
 
-![Test bench overview](assets/screenshots/test-bench-overview.png)
+![Studio overview](assets/screenshots/test-bench-overview.png)
 
-Live generation — the `analyst` route with two steering overlays
-(`budget`, `preferences`) and the `tighten` + `markdown` injections
-applied:
+## What you do with it
 
-<video autoplay loop muted playsinline style="max-width:100%;border-radius:6px">
-  <source src="assets/screenshots/generation.webm" type="video/webm">
-  <source src="assets/screenshots/generation.mp4" type="video/mp4">
-</video>
+1. Pick a route. Fill in a user input. Toggle injections and overrides.
+2. Generate — inspect the system/user prompts, attempts, and resolved config in the debug trace.
+3. Iterate. Follow-ups become overlays; overlays persist across runs.
+4. **Edit prompt** (next to the route selector) lets you override the
+   resolved system/user text for the next run(s) without touching the
+   route. Useful for quickly testing a wording change before deciding
+   whether to push it back into the preset. The override sticks until
+   explicitly cleared.
+5. Hit **Export as Python** → **Copy** the generated `PromptEngine(...)`
+   snippet, **Download** it as a `.py` file, or **Save to disk** under a
+   name. Saves default to `./promptlibretto_exports/` (the directory you
+   launched the studio from), so running the studio from your project
+   root drops exports right into the project. Override with
+   `PROMPTLIBRETTO_EXPORT_DIR`.
 
-## API shape
+The export is render-time, not structural: it serialises the resolved
+state (config, base, overlays, route sections) into runnable code.
+Dynamic user-input slots survive as lambdas. If a scenario is loaded,
+the export modal prefills the save-name from it.
 
-- `GET /api/state` dumps config, routes, overlays, injections, recent
-  outputs, and run history in one payload. The frontend re-renders from
-  this on every meaningful change.
-- `POST /api/generate` / `POST /api/generate/stream` run
-  `engine.generate_once` or `engine.generate_stream`. Everything else
-  mutates state; generate reads it.
-- Handlers don't build prompts; they call engine methods.
+![Export modal](assets/screenshots/export.png)
+
+When you **Save to disk** the studio also snapshots the current state as
+a scenario under the same name. The saved-exports list shows a
+**Load scenario** button that restores the exact studio setup that
+produced the export — edit, then re-export.
+
+### Runtime slots
+
+Each overlay card has a **runtime** dropdown:
+
+- **fixed (set at export time)** — overlay text is baked into the export.
+- **runtime — optional** — becomes a keyword arg on the exported
+  `async def run(...)`; only set if a non-empty value is passed.
+- **runtime — required** — becomes a required keyword arg; the wrapper
+  raises `ValueError` if the caller passes an empty string.
+
+![Runtime dropdown](assets/screenshots/overlay-runtime.png)
+
+Every export ships with an `async def run(user_input="", *, <slots>, **extra)`
+helper. `**extra` accepts arbitrary keyword arguments and attaches each
+as a priority-10 overlay, so callers can inject ad-hoc context without
+re-exporting. The wrapper clears any prior runtime / `**extra` overlays
+at entry so calls don't leak state into one another. Runtime-tagged
+overlays are also skipped during studio generation (their text is a
+design-time placeholder, not a value).
+
+## Running
+
+```bash
+pip install "promptlibretto[studio]"
+promptlibretto-studio                         # defaults to Ollama at localhost:8080
+PROMPT_ENGINE_MOCK=1 promptlibretto-studio    # no model required; echoes prompts
+```
+
+Env vars: `HOST`, `PORT`, `OLLAMA_URL`, `OLLAMA_MODEL`, `PROMPT_ENGINE_MOCK`,
+`PROMPTLIBRETTO_DATA_DIR` (defaults to `~/.promptlibretto/studio`; holds
+scenarios and the base-context library),
+`PROMPTLIBRETTO_EXPORT_DIR` (defaults to `./promptlibretto_exports/`;
+holds saved `.py` exports — kept in CWD so they sit next to your project).
 
 ## Wiring
 
 ```
-┌───────────────────── browser (static/app.js) ──────────────────────┐
-│  config tab · context tab · routes · injections · iterate · runs  │
-└──────────────────────────┬─────────────────────────────────────────┘
-                           │ fetch()
-                           ▼
-┌─────────────────── FastAPI (main.py) ──────────────────────────────┐
-│  /api/state · /api/generate · /api/context/* · /api/config ·       │
-│  /api/iterate · /api/scenarios · /api/run_history · /api/latency   │
-└──────────────────────────┬─────────────────────────────────────────┘
-                           │ engine method calls
-                           ▼
-┌─────────────────── PromptEngine (library) ─────────────────────────┐
-│  ContextStore · PromptAssetRegistry · PromptRouter · Provider ·    │
-│  OutputProcessor · RecentOutputMemory · RunHistory · Middleware    │
-└────────────────────────────────────────────────────────────────────┘
+┌────────────── browser (static/app.js) ──────────────┐
+│ config · context · routes · injections · runs       │
+└───────────────────────┬─────────────────────────────┘
+                        │ fetch()
+                        ▼
+┌────────────── FastAPI (main.py) ────────────────────┐
+│ /api/state · /api/generate · /api/context/*         │
+│ /api/config · /api/iterate · /api/scenarios         │
+│ /api/export                                         │
+└───────────────────────┬─────────────────────────────┘
+                        │ engine calls
+                        ▼
+┌────────────── PromptEngine (library) ───────────────┐
+│ ContextStore · PromptAssetRegistry · PromptRouter   │
+│ Provider · OutputProcessor · RecentOutputMemory     │
+│ RunHistory · Middleware                             │
+└─────────────────────────────────────────────────────┘
 ```
 
-One engine is built in `lifespan()` and attached to `app.state`. All
-handlers pull it via `_engine()`. The engine owns the context store, the
-router, the provider, recent memory, and run history — the server only
-holds two other stores (see below) that are *app-level concerns*, not
-library concerns.
+One engine is built in `lifespan()` and attached to `app.state`. Handlers
+pull it via `_engine()`. The engine owns the context store, router,
+provider, recent memory, and run history. The server holds two extra
+stores for app concerns the library shouldn't know about.
 
-## App-level stores vs library stores
+## Stores
 
-Some state belongs to the library (the things the engine needs to
-generate). Some state belongs to the app (the things a UI wants to
-persist across page reloads). They're kept separate on purpose.
-
-| Store               | Lives in  | Purpose                                                 |
+| Store               | Owner     | Purpose                                                 |
 | ------------------- | --------- | ------------------------------------------------------- |
 | `ContextStore`      | library   | Base text + overlays used to build prompts.             |
 | `RecentOutputMemory`| library   | Dedup against near-duplicate outputs (Jaccard).         |
 | `RunHistory`        | library   | Ordered log of full runs for replay.                    |
 | `BaseLibrary`       | server    | Named, saveable base-context texts.                     |
 | `ScenarioLibrary`   | server    | Full app-state snapshots (base + overlays + config).    |
+| `ExportLibrary`     | server    | Named `.py` exports saved for copy-paste into your app. |
 | `LatencyLogger`     | server    | Middleware-populated ring buffer of run timings.        |
 
-The library shouldn't know that someone wants to save base contexts by
-name, or snapshot the entire UI, or watch request latency. Those are UI
-affordances. Keeping them in the server makes the library boundary
-obvious and keeps each store single-purpose.
+`BaseLibrary` and `ScenarioLibrary` are JSON-backed caches with atomic
+tmp-file writes and a lock.
 
-Both `BaseLibrary` and `ScenarioLibrary` are tiny JSON-backed caches with
-atomic tmp-file writes and a lock. They don't warrant a database.
+## API shape
 
-## The panels
+- `GET /api/state` dumps config, routes, overlays, injections, recent
+  outputs, and run history in one payload. The frontend re-renders from
+  this on every meaningful change.
+- `POST /api/generate` / `POST /api/generate/stream` run `engine.generate_once`
+  or `engine.generate_stream`.
+- `POST /api/export` renders the current route + context into a runnable
+  Python snippet (uses `promptlibretto.export_python`).
+- `GET /api/exports`, `PUT/GET/DELETE /api/exports/{name}` manage saved
+  `.py` exports on disk.
+- `POST /api/prompt/resolve` runs the builder without calling the
+  provider — used by the **Edit prompt** modal to prefill the resolved
+  system/user text.
+- `POST /api/generate` accepts an optional `section_overrides` body
+  field (`{"system": "...", "user": "..."}`) that bypasses the builder
+  for one call. The **Edit prompt** button sends this on each generate
+  until the user clears the override.
+- `PUT /api/context/*`, `PUT /api/config` mutate the engine in place.
+- `POST /api/iterate` writes a compacted user follow-up back as a `turn_N`
+  overlay via `make_turn_overlay()`.
 
-**Compose tab.** Route selector, user input, injection checkboxes, and
-generation overrides all live here. Changing the route updates the
-injection groups underneath — each route opts in to which groups it
-accepts.
+Handlers don't build prompts; they call engine methods.
+
+## Panels
+
+**Compose tab.** Route selector, user input, injection checkboxes,
+generation overrides. **Edit prompt** sits next to the route selector —
+opens a modal to override the resolved system / user text for the next
+run(s); the override sticks until cleared.
 
 ![Compose tab](assets/screenshots/compose-tab.png)
 
-**Context state tab.** Long-lived base text at the top, named overlays
-below with priority and expiry. The "Suggest" button asks the model to
-propose overlays against the current base.
+![Edit prompt modal](assets/screenshots/edit-route-prompt.png)
+
+**Context state tab.** Base text at the top, named overlays below with
+priority, runtime mode, and expiry. "Suggest" asks the model to propose
+overlays against the current base.
 
 ![Context state tab](assets/screenshots/context-state-tab.png)
 
 **Debug trace panel.** System prompt, user prompt, active context, every
-attempt, and the resolved config — all live-updated on each run.
+attempt, and the resolved config — live-updated per run.
 
-![Debug trace part 1](assets/screenshots/debug-trace-1.png)
+![Debug trace](assets/screenshots/debug-trace-1.png)
 
-![Debug trace part 2](assets/screenshots/debug-trace-2.png)
+![Debug trace continued](assets/screenshots/debug-trace-2.png)
 
-## Composition, not configuration
+## Why imperative presets
 
-The router and the asset registry are built imperatively in
-[`presets.py`](presets.py) by calling `add_frame`, `add_injector`,
-`PromptRoute(builder=CompositeBuilder(...))`. That's deliberate. The
-library doesn't ship a YAML or JSON format for routes because the
-expressive surface — sections as callables, overrides, output policy,
-closures over assets — is already Python. Trying to encode that in a
-declarative schema would either lose expressiveness or reinvent Python.
+The router and asset registry are built imperatively in
+`presets.py` with `add_frame`, `add_injector`,
+`PromptRoute(builder=CompositeBuilder(...))`. Sections are callables,
+overrides and output policy are passed through, and builders close over
+assets — that expressive surface is already Python, so a YAML schema
+would lose expressiveness or reinvent it. Swap `presets.py` for your own
+and keep the rest.
 
-The presets are the example of how an app *should* wire up an engine,
-not a required pattern. A real app swaps `presets.py` for its own
-builders and keeps the rest.
+## Middleware
 
-## How generation flows through a request
-
-1. Browser edits base text, adds an overlay, or flips a config value.
-   Each is a small `PUT /api/context/*` or `PUT /api/config`. The engine
-   is mutated in place.
-2. Browser calls `POST /api/generate` or `POST /api/generate/stream` with
-   `{mode, inputs, injections, debug, config_overrides}`.
-3. Server constructs an engine `GenerationRequest` and calls
-   `engine.generate_once()`. That's it — no prompt assembly on the
-   server side.
-4. Engine routes, builds, calls the provider, cleans+validates output,
-   records to run history, runs middleware. The `GenerationResult` comes
-   back with `{text, accepted, route, trace}`.
-5. Handler returns it as JSON. Browser re-fetches `/api/state` to pick
-   up the new overlay set, updated run history, etc., and re-renders.
-
-## Middleware as app-level instrumentation
-
-`middleware.py` has `LatencyLogger` — a minimal middleware that times
-each generation and keeps the last 50 records in a deque. It's attached
-at engine construction in `_build_engine()`. `GET /api/latency` exposes
-the records for any UI that wants them.
-
-This is the canonical use of the library's middleware hook: cross-cutting
-concerns that shouldn't touch prompt construction. Logging, rate limiting,
-caching, redaction all fit the same pattern. Adding one is ~20 lines and
-one registration.
-
-## Iteration turns
-
-`POST /api/iterate` takes the most recent run's prompt + output plus the
-user's follow-up, optionally runs a compaction route to densify it, and
-writes the result back as a `turn_N` overlay via `make_turn_overlay()`.
-The verbatim text is always preserved in overlay metadata, so the UI
-exposes `recompact` and `revert` endpoints to undo the compaction step
-without losing the underlying turn.
-
-This is an app-level feature assembled from library primitives — the
-library ships `make_turn_overlay`, a `compact_turn` route is registered
-in `presets.py`, and the server orchestrates the three steps. The
-library doesn't need to know what "iteration" means.
+`LatencyLogger` in `middleware.py` times each generation
+and keeps the last 50 records in a deque, attached at engine construction.
+`GET /api/latency` exposes them. Same pattern works for logging, caching,
+redaction — any cross-cutting concern that shouldn't touch prompt
+construction.
 
 ## Scenarios vs run history
 
-Run history is the engine's. Scenarios are the server's. They answer
-different questions:
+Run history answers "what did I send and what came back recently?"
+Scenarios answer "snapshot the whole app so I can come back to this
+setup." Scenarios are opaque JSON blobs captured and applied by the
+browser (`captureScenarioState` / `applyScenarioState` in `app.js`); the
+server just persists them by name.
 
-- Run history: "what did I send and what came back, recently?"
-- Scenario: "snapshot the whole app (base + overlays + config + recent
-  runs) so I can come back to this exact setup tomorrow."
+Run history reloads only the original `config_overrides`. The resolved
+config lives in each run's metadata so route defaults stay inspectable
+and don't become sticky GUI overrides on reload.
 
-Scenarios are opaque JSON blobs captured and applied by the browser —
-the server just persists them by name. Keeping the *capture* logic in
-the browser (`captureScenarioState` / `applyScenarioState` in `app.js`)
-means the server doesn't need to know what the UI considers "state."
+## Files
 
-Run history reloads only the original request-level `config_overrides`.
-The fully resolved config is stored separately in each run's metadata, so
-route defaults remain inspectable without becoming sticky GUI overrides
-when a prior run is loaded.
-
-## Running
-
-```bash
-pip install fastapi uvicorn httpx pydantic
-python run.py                         # defaults to Ollama at localhost:8080
-PROMPT_ENGINE_MOCK=1 python run.py    # no model required; echoes prompts
-```
-
-Env vars: `OLLAMA_URL`, `OLLAMA_MODEL`, `PROMPT_ENGINE_MOCK`.
-
-## File map
-
-- [`main.py`](main.py) — FastAPI app, lifespan, endpoints, Pydantic bodies.
-- [`presets.py`](presets.py) — example routes, frames, personas, injectors.
-- [`middleware.py`](middleware.py) — `LatencyLogger` middleware.
-- [`base_library.py`](base_library.py) — named base-context store.
-- [`scenario_library.py`](scenario_library.py) — named full-state store.
-- [`static/index.html`](static/index.html) — single-page UI skeleton.
-- [`static/app.js`](static/app.js) — fetch + render + event wiring.
-- [`static/style.css`](static/style.css) — layout and pills/cards styling.
+- `main.py` — FastAPI app, lifespan, endpoints.
+- `presets.py` — example routes, frames, personas, injectors.
+- `middleware.py` — `LatencyLogger`.
+- `base_library.py` — named base-context store.
+- `scenario_library.py` — named full-state store.
+- `export_library.py` — named `.py` export store.
+- `static/index.html` — single-page UI.
+- `static/app.js` — fetch + render + event wiring.
+- `static/style.css` — layout and styling.
