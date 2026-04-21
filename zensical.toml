@@ -8,7 +8,6 @@ nav = [
   { "Home" = "index.md" },
   { "Design rationale" = "design.md" },
   { "Test bench" = "server.md" },
-  { "AI slop notes" = "slop-notes.md" },
 ]
 
 copyright = "Licensed under the MIT License."
