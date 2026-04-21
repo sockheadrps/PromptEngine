@@ -1,0 +1,14 @@
+[project]
+site_name = "prompt_engine"
+site_description = "A small, composable library for apps that send more than one kind of prompt to an LLM."
+site_url = "https://sockheadrps.github.io/PromptEngine/"
+repo_url = "https://github.com/sockheadrps/PromptEngine"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Design rationale" = "design.md" },
+  { "Test bench" = "server.md" },
+  { "AI slop notes" = "slop-notes.md" },
+]
+
+copyright = "Licensed under the MIT License."
