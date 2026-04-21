@@ -544,35 +544,6 @@ middleware small preserves the invariant that *all generation goes through
 one code path* — schedulers, stepper debuggers, and middleware all see the
 same `GenerationResult`.
 
-## Typed Route Inputs
-
-`GenerationRequest.inputs` is `Mapping[str, Any]` — intentionally loose
-so callers can pass arbitrary payloads through to builders. Routes that
-want a tighter contract can declare an `inputs_schema` dataclass. When
-present, the engine validates inputs before the builder runs:
-
-- Required fields (no `default`, no `default_factory`) must appear in
-  `inputs`.
-- Missing required fields raise `InputValidationError(route, missing)`
-  with a list of field names.
-- Extras are allowed. The contract is additive so a caller passing
-  metadata through does not break routes that do not know about it.
-
-This is opt-in per route. Routes without a schema behave exactly as
-before. The validation step is cheap — a single field scan — so it does
-not bloat the hot path. The design goal is to give consumers a clean
-error at the boundary (before prompt construction, before the provider
-call) rather than a confused model output when a builder silently
-references a missing key.
-
-The library accepts any dataclass rather than pulling in pydantic
-because dataclasses are part of the standard library and carry no
-runtime cost beyond field inspection. Teams that want runtime type
-coercion can still build on top with their own schema type — the engine
-only asks that `required_inputs()` and `validate_inputs()` do the right
-thing, so subclassing `PromptRoute` or registering a custom route type
-remains an option.
-
 ## Prompt-Size Budget
 
 When overlays accumulate (iteration turns, user preferences, transient
@@ -685,7 +656,6 @@ prompt-engine/
     PromptRouter.ts
     PromptRoute.ts
   builders/
-    PromptBuilder.ts
     CompositeBuilder.ts
   runtime/
     PromptEngine.ts

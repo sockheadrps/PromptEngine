@@ -11,9 +11,9 @@ from .context.overlay import ContextOverlay, ContextSnapshot, make_turn_overlay
 from .context.template import TemplateRenderer, TemplateField, TemplateRenderOptions
 from .context.store import ContextStore
 from .assets.registry import PromptAssetRegistry, InjectionTemplate, PromptInjection
-from .routing.route import PromptRoute, InputValidationError
+from .routing.route import PromptRoute
 from .routing.router import PromptRouter
-from .builders.builder import PromptBuilder, PromptPackage, GenerationRequest
+from .builders.builder import PromptPackage, GenerationRequest
 from .builders.composite import CompositeBuilder, section, join_sections
 from .providers.base import (
     ProviderAdapter,
@@ -30,7 +30,7 @@ from .output.memory import RecentOutputMemory
 from .output.history import RunHistory, RunRecord
 from .runtime.trace import GenerationTrace, GenerationAttempt
 from .runtime.engine import PromptEngine, GenerationResult, GenerationChunk
-from .runtime.middleware import Middleware, apply_before, apply_after
+from .runtime.middleware import apply_before, apply_after
 
 __all__ = [
     "GenerationConfig",
@@ -48,9 +48,7 @@ __all__ = [
     "InjectionTemplate",
     "PromptInjection",
     "PromptRoute",
-    "InputValidationError",
     "PromptRouter",
-    "PromptBuilder",
     "PromptPackage",
     "GenerationRequest",
     "CompositeBuilder",
@@ -75,7 +73,6 @@ __all__ = [
     "PromptEngine",
     "GenerationResult",
     "GenerationChunk",
-    "Middleware",
     "apply_before",
     "apply_after",
 ]

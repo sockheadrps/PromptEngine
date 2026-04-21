@@ -62,6 +62,8 @@ class OllamaProvider(ProviderAdapter):
                 "temperature": request.temperature,
                 "max_tokens": request.max_tokens,
             }
+            if stream:
+                payload["stream_options"] = {"include_usage": True}
             if request.top_p is not None:
                 payload["top_p"] = request.top_p
             # OpenAI-compatible servers typically don't accept top_k /
@@ -140,6 +142,8 @@ class OllamaProvider(ProviderAdapter):
                 if piece:
                     buffer.append(piece)
                     yield ProviderStreamChunk(text=piece, done=False)
+                if _has_usage(data):
+                    final_data = data
                 if data.get("done"):
                     final_data = data
                     break
@@ -241,3 +245,13 @@ def _safe_sum(a: Optional[int], b: Optional[int]) -> Optional[int]:
     if a is None and b is None:
         return None
     return (a or 0) + (b or 0)
+
+
+def _has_usage(data: dict) -> bool:
+    return (
+        isinstance(data.get("usage"), dict)
+        or data.get("prompt_eval_count") is not None
+        or data.get("eval_count") is not None
+        or data.get("tokens_evaluated") is not None
+        or data.get("tokens_predicted") is not None
+    )

@@ -29,6 +29,8 @@ class GenerationResult:
     accepted: bool
     route: str
     trace: Optional[GenerationTrace] = None
+    usage: Optional[dict] = None
+    timing: Optional[dict] = None
 
 
 @dataclass
@@ -97,8 +99,7 @@ class PromptEngine:
         injections = self._materialize_injections(request.injections)
 
         route = self.router.select(snapshot, request)
-        route.validate_inputs(request.inputs)
-        package, snapshot, merged_config, trim_info = self._build_with_budget(
+        package, snapshot, merged_config, config_layers, trim_info = self._build_with_budget(
             route, request, snapshot, injections
         )
         policy = self.output_processor.policy_for(package.output_policy)
@@ -163,6 +164,7 @@ class PromptEngine:
                         for n, o in snapshot.overlays.items()
                     },
                     "package_metadata": dict(package.metadata),
+                    "config_layers": config_layers,
                     "reject_reason": reject_reason if not accepted else None,
                     "budget": trim_info,
                 },
@@ -171,15 +173,11 @@ class PromptEngine:
         if self.run_history is not None:
             self.run_history.add(
                 RunRecord(
-                    request={
-                        "mode": request.mode,
-                        "inputs": dict(request.inputs or {}),
-                        "injections": list(request.injections or []),
-                        "config_overrides": merged_config.to_dict(),
-                    },
+                    request=self._history_request(request),
                     text=final_text,
                     accepted=accepted,
                     route=route.name,
+                    metadata={"resolved_config": merged_config.to_dict()},
                 )
             )
 
@@ -188,6 +186,8 @@ class PromptEngine:
             accepted=accepted,
             route=route.name,
             trace=trace,
+            usage=asdict(provider_response.usage) if provider_response else None,
+            timing=asdict(provider_response.timing) if provider_response else None,
         )
 
     async def generate_stream(
@@ -213,8 +213,7 @@ class PromptEngine:
         snapshot = self.context_store.get_state()
         injections = self._materialize_injections(request.injections)
         route = self.router.select(snapshot, request)
-        route.validate_inputs(request.inputs)
-        package, snapshot, merged_config, trim_info = self._build_with_budget(
+        package, snapshot, merged_config, config_layers, trim_info = self._build_with_budget(
             route, request, snapshot, injections
         )
         policy = self.output_processor.policy_for(package.output_policy)
@@ -267,6 +266,7 @@ class PromptEngine:
                         for n, o in snapshot.overlays.items()
                     },
                     "package_metadata": dict(package.metadata),
+                    "config_layers": config_layers,
                     "reject_reason": None if validation.ok else validation.reason,
                     "streamed": True,
                     "budget": trim_info,
@@ -278,21 +278,21 @@ class PromptEngine:
             accepted=validation.ok,
             route=route.name,
             trace=trace,
+            usage=asdict(final_response.usage) if final_response else None,
+            timing=asdict(final_response.timing) if final_response else None,
         )
 
         if self.run_history is not None:
             self.run_history.add(
                 RunRecord(
-                    request={
-                        "mode": request.mode,
-                        "inputs": dict(request.inputs or {}),
-                        "injections": list(request.injections or []),
-                        "config_overrides": merged_config.to_dict(),
-                    },
+                    request=self._history_request(request),
                     text=cleaned,
                     accepted=validation.ok,
                     route=route.name,
-                    metadata={"streamed": True},
+                    metadata={
+                        "resolved_config": merged_config.to_dict(),
+                        "streamed": True,
+                    },
                 )
             )
 
@@ -330,12 +330,18 @@ class PromptEngine:
                 .merged_with(pkg.generation_overrides)
                 .merged_with(request.config_overrides)
             )
-            return pkg, cfg
+            layers = {
+                "base_config": self.config.to_dict(),
+                "package_overrides": dict(pkg.generation_overrides or {}),
+                "request_overrides": dict(request.config_overrides or {}),
+                "resolved_config": cfg.to_dict(),
+            }
+            return pkg, cfg, layers
 
-        package, merged_config = build(snapshot)
+        package, merged_config, config_layers = build(snapshot)
         budget = merged_config.max_prompt_chars
         if budget is None or budget <= 0:
-            return package, snapshot, merged_config, None
+            return package, snapshot, merged_config, config_layers, None
 
         def size(pkg):
             return len(pkg.system or "") + len(pkg.user or "")
@@ -351,7 +357,7 @@ class PromptEngine:
             remaining = {n: o for n, o in current_snapshot.overlays.items() if n != victim}
             current_snapshot = current_snapshot.with_overlays(remaining)
             dropped.append(victim)
-            package, merged_config = build(current_snapshot)
+            package, merged_config, config_layers = build(current_snapshot)
 
         trim_info = {
             "budget_chars": budget,
@@ -359,7 +365,16 @@ class PromptEngine:
             "dropped": dropped,
             "over_budget": size(package) > budget,
         }
-        return package, current_snapshot, merged_config, trim_info
+        return package, current_snapshot, merged_config, config_layers, trim_info
+
+    @staticmethod
+    def _history_request(request: GenerationRequest) -> dict:
+        return {
+            "mode": request.mode,
+            "inputs": dict(request.inputs or {}),
+            "injections": list(request.injections or []),
+            "config_overrides": dict(request.config_overrides or {}),
+        }
 
     def _materialize_injections(self, names: Sequence[str]) -> list[PromptInjection]:
         out: list[PromptInjection] = []

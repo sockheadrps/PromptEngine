@@ -33,11 +33,18 @@ async def test_run_history_records_run(make_engine_fn):
     history = RunHistory(capacity=5)
     engine = make_engine_fn(history=history)
     await engine.generate_once(GenerationRequest(inputs={"input": "one"}))
-    await engine.generate_once(GenerationRequest(inputs={"input": "two"}))
+    await engine.generate_once(
+        GenerationRequest(
+            inputs={"input": "two"},
+            config_overrides={"temperature": 0.33},
+        )
+    )
     items = history.items()
     assert len(items) == 2
     assert items[1].accepted is True
     assert "two" in items[1].text
+    assert items[1].request["config_overrides"] == {"temperature": 0.33}
+    assert items[1].metadata["resolved_config"]["temperature"] == 0.33
 
 
 async def test_recent_memory_records_successful_output(make_engine_fn):
@@ -82,5 +89,16 @@ async def test_request_config_overrides_win_over_route_defaults(make_engine_fn):
     assert seen == {"temperature": 0.95, "max_tokens": 123}
     assert result.trace.config["temperature"] == 0.95
     assert result.trace.config["max_tokens"] == 123
+    assert result.trace.metadata["config_layers"]["base_config"]["temperature"] == 0.7
+    assert result.trace.metadata["config_layers"]["package_overrides"] == {
+        "temperature": 0.2,
+        "max_tokens": 10,
+    }
+    assert result.trace.metadata["config_layers"]["request_overrides"] == {
+        "temperature": 0.95,
+        "max_tokens": 123,
+    }
+    assert result.usage["completion_tokens"] is not None
+    assert result.timing["total_ms"] is not None
     assert engine.config.temperature == 0.7
     assert engine.config.max_tokens == 64

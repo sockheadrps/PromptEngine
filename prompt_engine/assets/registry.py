@@ -28,12 +28,8 @@ class PromptInjection:
 
 
 class PromptAssetRegistry:
-    """Holds the editable, domain-flavored text that builders compose from.
-
-    Asset categories follow the design doc: frames, rules, examples (pools),
-    nudges (pools), personas, endings, injectors, fallbacks. Pools support
-    randomised picks via `pick_*` helpers.
-    """
+    """Named text fragments builders compose from: frames, rules, personas,
+    endings, example/nudge pools, and materializable injectors."""
 
     def __init__(self, random: Optional[RandomSource] = None):
         self._random: RandomSource = random or DefaultRandom()
@@ -41,7 +37,6 @@ class PromptAssetRegistry:
         self.rules: dict[str, str] = {}
         self.personas: dict[str, str] = {}
         self.endings: dict[str, str] = {}
-        self.fallbacks: dict[str, str] = {}
         self.examples: dict[str, list[str]] = {}
         self.nudges: dict[str, list[str]] = {}
         self.injectors: dict[str, InjectionTemplate] = {}
@@ -58,9 +53,6 @@ class PromptAssetRegistry:
 
     def add_ending(self, name: str, text: str) -> None:
         self.endings[name] = text
-
-    def add_fallback(self, name: str, text: str) -> None:
-        self.fallbacks[name] = text
 
     def add_examples(self, name: str, items: Sequence[str]) -> None:
         self.examples[name] = list(items)
@@ -84,14 +76,7 @@ class PromptAssetRegistry:
     def ending(self, name: str, default: str = "") -> str:
         return self.endings.get(name, default)
 
-    def fallback(self, name: str, default: str = "") -> str:
-        return self.fallbacks.get(name, default)
-
     # --- random picks ---------------------------------------------------
-    def pick_example(self, pool: str) -> Optional[str]:
-        items = self.examples.get(pool) or []
-        return self._random.choice(items) if items else None
-
     def pick_examples(self, pool: str, count: int) -> list[str]:
         items = self.examples.get(pool) or []
         if not items:
@@ -121,7 +106,6 @@ class PromptAssetRegistry:
             "rules": list(self.rules),
             "personas": list(self.personas),
             "endings": list(self.endings),
-            "fallbacks": list(self.fallbacks),
             "examples": list(self.examples),
             "nudges": list(self.nudges),
             "injectors": list(self.injectors),

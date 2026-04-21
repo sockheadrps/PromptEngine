@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
-from .builder import BuildContext, PromptBuilder, PromptPackage
+from .builder import BuildContext, PromptPackage
 
 SectionFn = Callable[[BuildContext], str]
 
@@ -22,12 +22,7 @@ def join_sections(parts: Iterable[str], separator: str = "\n\n") -> str:
 
 @dataclass
 class CompositeBuilder:
-    """Composes a prompt from ordered sections.
-
-    Each section is a callable receiving BuildContext and returning text.
-    Empty sections are skipped, so it's safe to make sections conditional
-    on context.
-    """
+    """Composes a prompt from ordered section callables; empty sections are skipped."""
 
     name: str
     user_sections: Sequence[SectionFn] = field(default_factory=tuple)

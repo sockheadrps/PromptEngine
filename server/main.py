@@ -5,6 +5,7 @@ GUI is easy to wire and the engine remains the single source of truth.
 """
 from __future__ import annotations
 
+import json
 import os
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -13,7 +14,7 @@ from typing import Any, Optional
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -599,8 +600,61 @@ async def generate(body: GenerateRequest):
         "text": result.text,
         "accepted": result.accepted,
         "route": result.route,
+        "usage": result.usage,
+        "timing": result.timing,
         "trace": result.trace.to_dict() if result.trace else None,
     }
+
+
+@app.post("/api/generate/stream")
+async def generate_stream(body: GenerateRequest):
+    eng = _engine()
+
+    async def events():
+        try:
+            request = EngineRequest(
+                mode=body.mode,
+                inputs=body.inputs,
+                injections=body.injections,
+                debug=body.debug,
+                config_overrides=body.config_overrides,
+            )
+            async for chunk in eng.generate_stream(request):
+                if chunk.done:
+                    result = chunk.result
+                    yield json.dumps({
+                        "done": True,
+                        "result": {
+                            "text": result.text if result else "",
+                            "accepted": result.accepted if result else False,
+                            "route": result.route if result else "",
+                            "usage": result.usage if result else None,
+                            "timing": result.timing if result else None,
+                            "trace": result.trace.to_dict()
+                            if result and result.trace
+                            else None,
+                        },
+                    }) + "\n"
+                elif chunk.delta:
+                    yield json.dumps({"delta": chunk.delta}) + "\n"
+        except httpx.HTTPError as exc:
+            yield json.dumps({
+                "error": {
+                    "error": "provider_unreachable",
+                    "kind": type(exc).__name__,
+                    "message": str(exc) or "provider closed the connection",
+                    "url": f"{OLLAMA_URL}{OLLAMA_CHAT_PATH}",
+                    "hint": (
+                        "Tunnel or backend may have dropped. If the remote is "
+                        "llama.cpp/vLLM rather than Ollama, set "
+                        "OLLAMA_CHAT_PATH=/v1/chat/completions."
+                    ),
+                }
+            }) + "\n"
+        except RuntimeError as exc:
+            yield json.dumps({"error": {"message": str(exc)}}) + "\n"
+
+    return StreamingResponse(events(), media_type="application/x-ndjson")
 
 
 # ----------------------------------------------------------------------

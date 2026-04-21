@@ -68,6 +68,8 @@ async def test_stream_emits_deltas_and_terminal_result(make_engine_fn):
     assert final is not None
     assert final.accepted is True
     assert "alpha" in final.text
+    assert final.usage["completion_tokens"] is not None
+    assert final.timing["total_ms"] is not None
 
 
 async def test_stream_applies_middleware(make_engine_fn):
@@ -85,3 +87,23 @@ async def test_stream_applies_middleware(make_engine_fn):
         if chunk.done:
             break
     assert events == ["before", "after"]
+
+
+async def test_stream_history_keeps_request_overrides_separate(make_engine_fn):
+    from prompt_engine import RunHistory
+
+    history = RunHistory(capacity=5)
+    engine = make_engine_fn(history=history)
+    async for chunk in engine.generate_stream(
+        GenerationRequest(
+            inputs={"input": "q"},
+            config_overrides={"max_tokens": 12},
+        )
+    ):
+        if chunk.done:
+            break
+
+    item = history.items()[0]
+    assert item.request["config_overrides"] == {"max_tokens": 12}
+    assert item.metadata["resolved_config"]["max_tokens"] == 12
+    assert item.metadata["streamed"] is True

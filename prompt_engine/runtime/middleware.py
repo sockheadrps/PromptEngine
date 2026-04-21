@@ -1,30 +1,13 @@
-"""Middleware hooks around PromptEngine.generate_once.
+"""Middleware hooks around PromptEngine.generate_once / generate_stream.
 
-A middleware is any object implementing `before` and/or `after`:
-
-    class Middleware(Protocol):
-        async def before(self, request): ...         # may return a new request
-        async def after(self, request, result): ...  # may return a new result
-
-Either method can be sync or async. Returning `None` means "pass through".
-Middlewares run in registration order around `generate_once` — outer
-middleware wraps inner — so a logging middleware registered first sees the
-final (post-middleware) request going out and the final result coming back.
-
-This is deliberately small. It does NOT intercept provider calls directly,
-add retry semantics, or expose the build pipeline. Use it for cross-cutting
-concerns (logging, metrics, caching, rate-limiting, redaction) that don't
-need to mutate prompt construction itself.
+A middleware is any object with a `before(request)` and/or `after(request, result)`
+method (sync or async). Return `None` to pass through, or a new value to replace.
+Middlewares run in registration order on the way in, reverse on the way out.
 """
 from __future__ import annotations
 
 import inspect
-from typing import Any, Optional, Protocol
-
-
-class Middleware(Protocol):
-    async def before(self, request: Any) -> Optional[Any]: ...
-    async def after(self, request: Any, result: Any) -> Optional[Any]: ...
+from typing import Any
 
 
 async def _maybe_await(value: Any) -> Any:
@@ -47,7 +30,6 @@ async def apply_before(middlewares: list[Any], request: Any) -> Any:
 
 async def apply_after(middlewares: list[Any], request: Any, result: Any) -> Any:
     current = result
-    # Reverse order on the way out so outer middleware sees the final result.
     for mw in reversed(middlewares):
         fn = getattr(mw, "after", None)
         if fn is None:

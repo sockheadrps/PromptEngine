@@ -22,10 +22,11 @@ That framing shows up in a few places:
   payload. The front-end re-renders from that on every meaningful change.
   Avoids the usual N-endpoint fan-out where the client has to stitch
   together independent views.
-- **`POST /api/generate` is the single write endpoint for generation.**
+- **`POST /api/generate` is the normal write endpoint for generation.**
   Everything else mutates context — base text, overlays, config — then
-  `/generate` reads it and produces output. Separating state mutation
-  from generation keeps both sides simple.
+  `/generate` reads it and produces output. `POST /api/generate/stream`
+  exercises the same engine path with token streaming. Separating state
+  mutation from generation keeps both sides simple.
 - **Handlers never build prompts.** They call engine methods. Prompt
   construction, routing, output validation, retry, and recording all
   happen inside the engine. The server only wires HTTP shape to engine
@@ -99,8 +100,8 @@ builders and keeps the rest.
 1. Browser edits base text, adds an overlay, or flips a config value.
    Each is a small `PUT /api/context/*` or `PUT /api/config`. The engine
    is mutated in place.
-2. Browser calls `POST /api/generate` with `{mode, inputs, injections,
-   debug, config_overrides}`.
+2. Browser calls `POST /api/generate` or `POST /api/generate/stream` with
+   `{mode, inputs, injections, debug, config_overrides}`.
 3. Server constructs an engine `GenerationRequest` and calls
    `engine.generate_once()`. That's it — no prompt assembly on the
    server side.
@@ -149,6 +150,11 @@ Scenarios are opaque JSON blobs captured and applied by the browser —
 the server just persists them by name. Keeping the *capture* logic in
 the browser (`captureScenarioState` / `applyScenarioState` in `app.js`)
 means the server doesn't need to know what the UI considers "state."
+
+Run history reloads only the original request-level `config_overrides`.
+The fully resolved config is stored separately in each run's metadata, so
+route defaults remain inspectable without becoming sticky GUI overrides
+when a prior run is loaded.
 
 ## Running
 

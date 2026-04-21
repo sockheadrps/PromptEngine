@@ -285,6 +285,7 @@ const els = {
   clearRecent: $("clear-recent"),
   generate: $("generate-btn"),
   debug: $("debug-toggle"),
+  stream: $("stream-toggle"),
   outputRendered: $("output-rendered"),
   outputRaw: $("output-raw"),
   viewRendered: $("view-rendered"),
@@ -830,8 +831,8 @@ function renderOutput(result) {
   els.outAccepted.className = "pill " + (result.accepted ? "ok" : "bad");
 
   const t = result.trace || {};
-  const timing = t.timing || {};
-  const usage = t.usage || {};
+  const timing = result.timing || t.timing || {};
+  const usage = result.usage || t.usage || {};
   els.outTiming.textContent = timing.total_ms != null ? `${timing.total_ms.toFixed(0)} ms` : "—";
   const totalTokens = usage.total_tokens ?? ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0));
   els.outUsage.textContent = totalTokens ? `${totalTokens} tokens` : "—";
@@ -843,7 +844,8 @@ function renderOutput(result) {
     `#${i + 1} ${a.accepted ? "OK" : "REJECTED"}${a.reject_reason ? " — " + a.reject_reason : ""}\n--- raw ---\n${a.raw}\n--- cleaned ---\n${a.cleaned}`
   ).join("\n\n");
   els.traceUsage.textContent = formatUsageTiming(usage, timing);
-  els.traceConfig.textContent = JSON.stringify(t.config || {}, null, 2);
+  const layers = (t.metadata || {}).config_layers;
+  els.traceConfig.textContent = JSON.stringify(layers || { resolved_config: t.config || {} }, null, 2);
 }
 
 function formatUsageTiming(usage, timing) {
@@ -881,13 +883,16 @@ async function generate() {
   setOutputText("", "Generating…");
   try {
     await flushOverlayEdits();
-    const result = await api("POST", "/api/generate", {
+    const request = {
       mode: els.routeSelect.value || null,
       inputs: { input: els.inputText.value },
       injections: selectedInjections(),
       debug: els.debug.checked,
       config_overrides: readConfigOverrides(),
-    });
+    };
+    const result = els.stream.checked
+      ? await generateStream(request)
+      : await api("POST", "/api/generate", request);
     lastTurnContext.user_prompt = els.inputText.value || "";
     lastTurnContext.assistant_output = result.text || "";
     renderOutput(result);
@@ -897,6 +902,48 @@ async function generate() {
   } finally {
     els.generate.disabled = false;
   }
+}
+
+async function generateStream(request) {
+  const res = await fetch("/api/generate/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `${res.status} ${res.statusText}`);
+  }
+  if (!res.body) {
+    throw new Error("Streaming is not supported by this browser.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let output = "";
+  let finalResult = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    pending += decoder.decode(value || new Uint8Array(), { stream: !done });
+    const lines = pending.split("\n");
+    pending = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const event = JSON.parse(line);
+      if (event.error) throw new Error(event.error.message || event.error.error || "stream failed");
+      if (event.delta) {
+        output += event.delta;
+        setOutputText(output, "Generating…");
+      }
+      if (event.done) finalResult = event.result;
+    }
+    if (done) break;
+  }
+
+  if (!finalResult) throw new Error("stream ended without a final result");
+  return finalResult;
 }
 
 function setView(mode) {
