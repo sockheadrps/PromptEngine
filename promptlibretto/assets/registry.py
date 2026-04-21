@@ -8,8 +8,6 @@ from ..random_source import RandomSource, DefaultRandom
 
 @dataclass
 class InjectionTemplate:
-    """Static fragment that can be merged into a prompt by name."""
-
     instructions: str
     examples: Sequence[str] = field(default_factory=tuple)
     generation_overrides: Mapping[str, Any] = field(default_factory=dict)
@@ -18,8 +16,6 @@ class InjectionTemplate:
 
 @dataclass
 class PromptInjection:
-    """The materialised result of selecting an injection at request time."""
-
     name: str
     instructions: str
     examples: Sequence[str] = field(default_factory=tuple)
@@ -28,9 +24,6 @@ class PromptInjection:
 
 
 class PromptAssetRegistry:
-    """Named text fragments builders compose from: frames, rules, personas,
-    endings, example/nudge pools, and materializable injectors."""
-
     def __init__(self, random: Optional[RandomSource] = None):
         self._random: RandomSource = random or DefaultRandom()
         self.frames: dict[str, str] = {}
@@ -41,7 +34,6 @@ class PromptAssetRegistry:
         self.nudges: dict[str, list[str]] = {}
         self.injectors: dict[str, InjectionTemplate] = {}
 
-    # --- registration helpers -----------------------------------------
     def add_frame(self, name: str, text: str) -> None:
         self.frames[name] = text
 
@@ -63,7 +55,6 @@ class PromptAssetRegistry:
     def add_injector(self, name: str, template: InjectionTemplate) -> None:
         self.injectors[name] = template
 
-    # --- lookup ---------------------------------------------------------
     def frame(self, name: str, default: str = "") -> str:
         return self.frames.get(name, default)
 
@@ -76,7 +67,6 @@ class PromptAssetRegistry:
     def ending(self, name: str, default: str = "") -> str:
         return self.endings.get(name, default)
 
-    # --- random picks ---------------------------------------------------
     def pick_examples(self, pool: str, count: int) -> list[str]:
         items = self.examples.get(pool) or []
         if not items:
@@ -87,7 +77,6 @@ class PromptAssetRegistry:
         items = self.nudges.get(pool) or []
         return self._random.choice(items) if items else None
 
-    # --- injections -----------------------------------------------------
     def materialize_injection(self, name: str) -> Optional[PromptInjection]:
         template = self.injectors.get(name)
         if template is None:

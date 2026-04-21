@@ -22,10 +22,10 @@ Source: [testbench/ on GitHub](https://github.com/sockheadrps/promptlibretto/tre
 ## Install
 
 ```bash
-pip install .                 # library only, no runtime deps
-pip install ".[ollama]"       # adds httpx for OllamaProvider
-pip install ".[testbench]"       # adds FastAPI stack for the test bench
-pip install ".[dev]"          # adds pytest + pytest-asyncio
+pip install promptlibretto                # library only, no runtime deps
+pip install "promptlibretto[ollama]"      # adds httpx for OllamaProvider
+pip install "promptlibretto[testbench]"   # adds FastAPI stack for the test bench
+pip install "promptlibretto[dev]"         # adds pytest + pytest-asyncio
 ```
 
 ## Hello world
@@ -245,9 +245,8 @@ async for chunk in engine.generate_stream(request):
 ```
 
 !!! warning
-    Streaming makes exactly one provider call — output-policy retries are
-    skipped because replaying a stream mid-output is more surprising than
-    useful. If `result.accepted` is `False`, fall back to `generate_once`.
+    Streaming makes exactly one provider call; output-policy retries are
+    skipped. If `result.accepted` is `False`, fall back to `generate_once`.
 
 ### Output processor
 
@@ -317,7 +316,7 @@ request shape for replay. Stores only the caller's explicit
 ## Development
 
 ```bash
-pip install ".[dev]"
+pip install "promptlibretto[dev]"
 pytest
 ```
 

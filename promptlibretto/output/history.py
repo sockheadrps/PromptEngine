@@ -1,13 +1,3 @@
-"""Bounded log of past runs, kept for UI replay and inspection.
-
-Distinct from `RecentOutputMemory`, which exists to detect repetition
-(Jaccard similarity over output text). This stores the *full* shape of a
-run — the request that produced it and what came back — so callers can
-reload a prior run into their UI, audit history, or build chat-style
-follow-ups on top.
-
-Both types are bounded ring buffers; neither knows about the other.
-"""
 from __future__ import annotations
 
 import time

@@ -1,10 +1,3 @@
-"""Generic modular prompt engine.
-
-Public surface is organised by concern: config, context, assets, routing,
-builders, providers, output, runtime, random. Most users only need a few
-imports from this top-level package.
-"""
-
 from .config import GenerationConfig
 from .random_source import RandomSource, DefaultRandom, SeededRandom
 from .context.overlay import ContextOverlay, ContextSnapshot, make_turn_overlay

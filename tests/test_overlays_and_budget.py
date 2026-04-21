@@ -14,7 +14,6 @@ def test_overlay_priority_ordering_in_active():
     store.set_overlay("low", ContextOverlay(text="L", priority=1))
     store.set_overlay("high", ContextOverlay(text="H", priority=10))
     active = store.get_active()
-    # higher priority appears before lower
     assert active.index("H") < active.index("L")
     assert active.startswith("BASE")
 
@@ -35,7 +34,6 @@ def test_snapshot_with_overlays_returns_new_snapshot():
     trimmed = snap.with_overlays({"b": snap.overlays["b"]})
     assert "OVERLAY_A" not in trimmed.active
     assert "OVERLAY_B" in trimmed.active
-    # original snapshot unchanged
     assert "OVERLAY_A" in snap.active
 
 
@@ -64,7 +62,6 @@ async def test_budget_drops_lowest_priority_first(make_engine_fn):
     store.set_overlay("high", ContextOverlay(text="H" * 100, priority=10))
     result = await engine.generate_once(GenerationRequest(inputs={"input": "q"}, debug=True))
     budget = result.trace.metadata["budget"]
-    # lowest-priority overlay goes first, then mid; high is last to drop
     assert budget["dropped"][0] == "low"
     assert "high" not in budget["dropped"] or budget["dropped"].index("high") > budget["dropped"].index("mid")
     assert budget["budget_chars"] == 80

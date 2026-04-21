@@ -10,13 +10,9 @@ if TYPE_CHECKING:
 
 
 class PromptRouter:
-    """Selects a PromptRoute given the active context and request.
-
-    Selection rules:
-      1. If `request.mode` names a route, prefer it (mode is an explicit override).
-      2. Otherwise, scan all routes whose `applies` predicate returns True.
-      3. Among matches, pick the highest priority. Ties: first-registered wins.
-      4. If nothing matches, fall back to the route flagged as default.
+    """Picks a route: an explicit `request.mode` wins; otherwise the
+    highest-priority `applies`-match; otherwise the default. First-registered
+    breaks priority ties.
     """
 
     def __init__(self, default_route: Optional[str] = None):

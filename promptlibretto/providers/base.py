@@ -47,15 +47,6 @@ class ProviderResponse:
 
 
 class ProviderAdapter(Protocol):
-    """Wraps a model backend behind a normalized request/response.
-
-    Providers MUST implement `generate`. Streaming is optional: providers
-    that support it implement `stream`, which yields text chunks as they
-    arrive and returns a final `ProviderResponse` via `StopAsyncIteration`'s
-    value — or more pragmatically, callers use `supports_streaming()` to
-    check and fall back to `generate` otherwise.
-    """
-
     async def generate(self, request: ProviderRequest) -> ProviderResponse: ...
 
 
@@ -63,17 +54,12 @@ class ProviderAdapter(Protocol):
 class ProviderStreamChunk:
     text: str
     done: bool = False
-    # Populated on the final chunk; callers can read usage/timing there.
     response: Optional[ProviderResponse] = None
 
 
 class StreamingProviderAdapter(ProviderAdapter, Protocol):
-    """Optional extension: providers that can emit incremental chunks.
-
-    Implementers yield `ProviderStreamChunk` as tokens arrive. The final
-    chunk has `done=True` and a `response` holding the aggregated text,
-    usage, and timing so downstream processors have the same shape they'd
-    see from `generate`.
+    """Provider extension that yields incremental chunks. The final chunk has
+    `done=True` and a `response` holding aggregated text/usage/timing.
     """
 
     def stream(

@@ -15,7 +15,7 @@ from .base import (
 
 
 class MockProvider(ProviderAdapter):
-    """Deterministic provider useful for tests and offline development."""
+    """Echo provider for tests and offline development."""
 
     def __init__(
         self,
@@ -43,7 +43,6 @@ class MockProvider(ProviderAdapter):
     async def stream(self, request: ProviderRequest) -> AsyncIterator[ProviderStreamChunk]:
         started = time.perf_counter()
         text = self._responder(request)
-        # Emit word-by-word so consumers can see progressive updates.
         parts = text.split(" ")
         buffer = ""
         for i, part in enumerate(parts):

@@ -19,10 +19,10 @@ Browser test bench: [`testbench/`](testbench/).
 ## Install
 
 ```bash
-pip install .                 # library only, no runtime deps
-pip install ".[ollama]"       # adds httpx for OllamaProvider
-pip install ".[testbench]"       # adds FastAPI stack for the test bench
-pip install ".[dev]"          # adds pytest + pytest-asyncio
+pip install promptlibretto                # library only, no runtime deps
+pip install "promptlibretto[ollama]"      # adds httpx for OllamaProvider
+pip install "promptlibretto[testbench]"   # adds FastAPI stack for the test bench
+pip install "promptlibretto[dev]"         # adds pytest + pytest-asyncio
 ```
 
 ## Hello world
@@ -241,9 +241,8 @@ async for chunk in engine.generate_stream(request):
         print(chunk.delta, end="", flush=True)
 ```
 
-> **⚠ Warning** — Streaming makes exactly one provider call. Output-policy
-> retries are skipped because replaying a stream mid-output is more
-> surprising than useful. If `result.accepted` is `False`, fall back to
+> **⚠ Warning** — Streaming makes exactly one provider call; output-policy
+> retries are skipped. If `result.accepted` is `False`, fall back to
 > `generate_once`.
 
 ### Output processor
@@ -313,7 +312,7 @@ request shape for replay. Stores only the caller's explicit
 ## Development
 
 ```bash
-pip install ".[dev]"
+pip install "promptlibretto[dev]"
 pytest
 ```
 

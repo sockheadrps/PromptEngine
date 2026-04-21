@@ -1,10 +1,3 @@
-"""Example middleware wired into the test-bench engine.
-
-`LatencyLogger` times each `generate_once` / `generate_stream` call and
-writes a one-line record to a bounded ring buffer. The server exposes
-`/api/latency` so the GUI can display recent generation latencies without
-any extra instrumentation in the engine or provider.
-"""
 from __future__ import annotations
 
 import time

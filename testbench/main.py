@@ -1,8 +1,3 @@
-"""FastAPI server exposing the prompt engine for browser-based testing.
-
-Routes are intentionally small wrappers over engine + state mutations so the
-GUI is easy to wire and the engine remains the single source of truth.
-"""
 from __future__ import annotations
 
 import json
@@ -22,15 +17,14 @@ from promptlibretto import (
     ContextOverlay,
     ContextStore,
     GenerationConfig,
+    GenerationRequest,
     MockProvider,
     OllamaProvider,
-    OutputProcessor,
     PromptEngine,
     RecentOutputMemory,
     RunHistory,
     make_turn_overlay,
 )
-from promptlibretto.builders.builder import GenerationRequest as EngineRequest
 
 from .base_library import BaseLibrary
 from .middleware import LatencyLogger
@@ -71,7 +65,6 @@ def _build_engine() -> tuple[PromptEngine, LatencyLogger]:
         asset_registry=assets,
         router=router,
         provider=provider,
-        output_processor=OutputProcessor(),
         recent_memory=RecentOutputMemory(capacity=12),
         run_history=RunHistory(capacity=24),
         middlewares=[latency],
@@ -98,12 +91,8 @@ async def lifespan(app: FastAPI):
             await provider.aclose()
 
 
-app = FastAPI(title="Prompt Engine", lifespan=lifespan)
+app = FastAPI(title="promptlibretto test bench", lifespan=lifespan)
 
-
-# ----------------------------------------------------------------------
-# request / response models
-# ----------------------------------------------------------------------
 
 class GenerateRequest(BaseModel):
     mode: Optional[str] = None
@@ -139,10 +128,6 @@ class ConfigBody(BaseModel):
     max_prompt_chars: Optional[int] = None
 
 
-# ----------------------------------------------------------------------
-# helpers
-# ----------------------------------------------------------------------
-
 def _engine() -> PromptEngine:
     engine = getattr(app.state, "engine", None)
     if engine is None:
@@ -171,10 +156,6 @@ class SaveBaseBody(BaseModel):
 class SaveScenarioBody(BaseModel):
     state: dict[str, Any]
 
-
-# ----------------------------------------------------------------------
-# routes
-# ----------------------------------------------------------------------
 
 @app.get("/api/state")
 def get_state():
@@ -344,7 +325,7 @@ async def suggest_overlays(body: SuggestOverlaysBody | None = None):
     ]
     user_input = (body.user_input if body else "") or ""
     result = await eng.generate_once(
-        EngineRequest(
+        GenerationRequest(
             mode="suggest_overlays",
             inputs={
                 "input": base,
@@ -479,7 +460,7 @@ async def iterate(body: IterateBody):
 
     if body.mode == "compact":
         result = await eng.generate_once(
-            EngineRequest(
+            GenerationRequest(
                 mode="compact_turn",
                 inputs={
                     "user_prompt": body.user_prompt,
@@ -525,7 +506,7 @@ async def recompact_overlay(name: str, body: RecompactBody):
         raise HTTPException(status_code=400, detail="overlay has no verbatim to recompact")
 
     result = await eng.generate_once(
-        EngineRequest(
+        GenerationRequest(
             mode="compact_turn",
             inputs={
                 "user_prompt": body.user_prompt,
@@ -572,7 +553,7 @@ async def generate(body: GenerateRequest):
 
     try:
         result = await eng.generate_once(
-            EngineRequest(
+            GenerationRequest(
                 mode=body.mode,
                 inputs=body.inputs,
                 injections=body.injections,
@@ -612,7 +593,7 @@ async def generate_stream(body: GenerateRequest):
 
     async def events():
         try:
-            request = EngineRequest(
+            request = GenerationRequest(
                 mode=body.mode,
                 inputs=body.inputs,
                 injections=body.injections,
@@ -656,10 +637,6 @@ async def generate_stream(body: GenerateRequest):
 
     return StreamingResponse(events(), media_type="application/x-ndjson")
 
-
-# ----------------------------------------------------------------------
-# static frontend
-# ----------------------------------------------------------------------
 
 _static_dir = Path(__file__).parent / "static"
 if _static_dir.exists():

@@ -8,13 +8,9 @@ from .template import TemplateRenderer, TemplateField, TemplateRenderOptions
 
 
 class ContextStore:
-    """Holds long-lived base context and short-lived overlays.
-
-    Effective context is computed on demand by:
-      1. Starting with the base text.
-      2. Dropping any expired overlays.
-      3. Sorting remaining overlays by priority (descending).
-      4. Concatenating them after the base.
+    """Holds the base context string and a set of named overlays. Effective
+    context is base + live overlays sorted by priority (desc); expired
+    overlays are dropped on read.
     """
 
     def __init__(
@@ -28,14 +24,12 @@ class ContextStore:
         self._overlays: dict[str, ContextOverlay] = {}
         self._fields: dict[str, Any] = dict(fields or {})
 
-    # --- base -----------------------------------------------------------
     def get_base(self) -> str:
         return self._base
 
     def set_base(self, value: str) -> None:
         self._base = value
 
-    # --- structured fields ---------------------------------------------
     def set_field(self, key: str, value: Any) -> None:
         self._fields[key] = value
 
@@ -45,7 +39,6 @@ class ContextStore:
     def fields(self) -> dict[str, Any]:
         return dict(self._fields)
 
-    # --- templating ----------------------------------------------------
     def render_template(
         self,
         template: str,
@@ -57,7 +50,6 @@ class ContextStore:
     def render_base(self, options: Optional[TemplateRenderOptions] = None) -> str:
         return self._renderer.render(self._base, self._fields, options)
 
-    # --- overlays ------------------------------------------------------
     def set_overlay(self, name: str, overlay: ContextOverlay) -> None:
         self._overlays[name] = overlay
 
@@ -70,7 +62,6 @@ class ContextStore:
     def overlays(self) -> dict[str, ContextOverlay]:
         return dict(self._overlays)
 
-    # --- effective context --------------------------------------------
     def get_active(self, now: Optional[float] = None) -> str:
         snap = self.get_state(now)
         return snap.active
@@ -78,7 +69,6 @@ class ContextStore:
     def get_state(self, now: Optional[float] = None) -> ContextSnapshot:
         ts = time.time() if now is None else now
         live = {n: o for n, o in self._overlays.items() if not o.is_expired(ts)}
-        # purge expired so they do not silently linger across calls
         if len(live) != len(self._overlays):
             self._overlays = live
 

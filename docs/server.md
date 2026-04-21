@@ -1,11 +1,9 @@
 # Test Bench Server
 
-A browser-based test bench for the `promptlibretto` library. FastAPI on the
-back, vanilla JS on the front, one engine instance per process. The goal
-isn't to be a product — it's to exercise every surface of the library
-(routes, overlays, injections, run history, iteration turns, streaming,
-middleware, budget) against a real local model, so you can *see* the
-pieces move when you change them.
+A browser UI over the `promptlibretto` library. FastAPI backend, vanilla
+JS frontend, one engine per process. Exists to exercise every surface of
+the library (routes, overlays, injections, run history, iteration turns,
+streaming, middleware, budget) against a local model.
 
 ![Test bench overview](assets/screenshots/test-bench-overview.png)
 
@@ -18,30 +16,15 @@ applied:
   <source src="assets/screenshots/generation.mp4" type="video/mp4">
 </video>
 
-## Framing
+## API shape
 
-The engine is the source of truth. The server is a thin translation layer:
-HTTP request in → engine state mutation or `engine.generate_once()` out.
-Almost no logic lives in the route handlers. If a concept (routes,
-overlays, injections, etc.) exists in the library, the server surfaces it
-as close to raw as possible rather than inventing a parallel model.
-
-That framing shows up in a few places:
-
-- **`GET /api/state` is the single read endpoint.** It dumps config,
-  routes, overlays, injections, recent outputs, and run history in one
-  payload. The front-end re-renders from that on every meaningful change.
-  Avoids the usual N-endpoint fan-out where the client has to stitch
-  together independent views.
-- **`POST /api/generate` is the normal write endpoint for generation.**
-  Everything else mutates context — base text, overlays, config — then
-  `/generate` reads it and produces output. `POST /api/generate/stream`
-  exercises the same engine path with token streaming. Separating state
-  mutation from generation keeps both sides simple.
-- **Handlers never build prompts.** They call engine methods. Prompt
-  construction, routing, output validation, retry, and recording all
-  happen inside the engine. The server only wires HTTP shape to engine
-  shape.
+- `GET /api/state` dumps config, routes, overlays, injections, recent
+  outputs, and run history in one payload. The frontend re-renders from
+  this on every meaningful change.
+- `POST /api/generate` / `POST /api/generate/stream` run
+  `engine.generate_once` or `engine.generate_stream`. Everything else
+  mutates state; generate reads it.
+- Handlers don't build prompts; they call engine methods.
 
 ## Wiring
 

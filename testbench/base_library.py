@@ -1,9 +1,3 @@
-"""JSON-backed library of named base-context snippets.
-
-The engine only keeps one active base context at a time, but users need to
-stash and recall multiple framings. This module is a tiny persistence layer
-for that — intentionally separate from the engine so the engine stays pure.
-"""
 from __future__ import annotations
 
 import json

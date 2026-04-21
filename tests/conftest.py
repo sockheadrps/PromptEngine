@@ -1,8 +1,3 @@
-"""Shared fixtures: a minimal engine wired up with mock provider.
-
-The fixtures here build the smallest working engine the tests need so
-each test file can focus on its concern without re-stating the boilerplate.
-"""
 from __future__ import annotations
 
 from typing import Callable, Optional

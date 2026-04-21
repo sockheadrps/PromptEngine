@@ -11,11 +11,9 @@ _BLANK_LINES = re.compile(r"\n{3,}")
 
 @dataclass
 class TemplateField:
-    """Structured input for a template slot.
-
-    `aliases` lets the same value resolve multiple slot names (e.g. {topic}/{subject}).
-    `fallback_sentence` builds a trailing sentence when the slot is missing from
-    the template but the field still needs to appear in the rendered output.
+    """Structured input for a template slot. `aliases` lets one value resolve
+    multiple slot names; `fallback_sentence` appends a trailing sentence when
+    the slot is absent from the template.
     """
 
     key: str
@@ -35,12 +33,7 @@ class TemplateRenderOptions:
 
 
 class TemplateRenderer:
-    """Render a template string by substituting named slots.
-
-    The renderer is intentionally small. It supports two input styles:
-      * a flat mapping (legacy), or
-      * a list of TemplateField for slots that may need fallbacks/aliases.
-    """
+    """Substitutes `{slot}` tokens. Accepts a flat mapping or TemplateField list."""
 
     def render(
         self,
@@ -86,10 +79,8 @@ class TemplateRenderer:
         rendered: str,
         values: Mapping[str, Any] | Iterable[TemplateField],
     ) -> str:
-        """Recover a template by replacing known values with `{slot}` tokens.
-
-        Conservative: only exact, longest-first matches are replaced. Empty values
-        are skipped to avoid replacing the empty string everywhere.
+        """Reverse of render: replace known values with `{slot}` tokens.
+        Longest-first, exact matches only; empty values are skipped.
         """
         fields = self._coerce_fields(values)
         replacements: list[tuple[str, str]] = []

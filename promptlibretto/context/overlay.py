@@ -22,11 +22,8 @@ def make_turn_overlay(
     priority: int = 25,
     extra_metadata: Optional[Mapping[str, Any]] = None,
 ) -> ContextOverlay:
-    """Build an overlay representing a user iteration turn.
-
-    The active text is the compacted form when present (denser context for
-    future turns), otherwise the verbatim text. The verbatim original is
-    always preserved in metadata so callers can revert or re-compact later.
+    """Overlay representing an iteration turn. Uses the compacted text when
+    given; always keeps the verbatim original in metadata for revert/recompact.
     """
     text = compacted if compacted else verbatim
     meta: dict[str, Any] = {"verbatim": verbatim, "kind": "turn"}
@@ -45,11 +42,8 @@ class ContextSnapshot:
     fields: dict[str, Any] = field(default_factory=dict)
 
     def with_overlays(self, overlays: Mapping[str, ContextOverlay]) -> "ContextSnapshot":
-        """Return a new snapshot with `active` rebuilt from `base` + `overlays`.
-
-        Priority order (desc) is preserved. Used by the engine's prompt-size
-        budget trim to produce a snapshot with the lowest-priority overlays
-        dropped without touching the underlying ContextStore.
+        """Return a new snapshot with `active` rebuilt from `base` + overlays
+        (priority desc). Does not mutate the source store.
         """
         ordered = sorted(overlays.items(), key=lambda kv: kv[1].priority, reverse=True)
         sections = [self.base] if self.base else []

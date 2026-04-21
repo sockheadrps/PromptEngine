@@ -44,22 +44,14 @@ class ProcessingContext:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
 
-# Collapse runs of inline whitespace (spaces / tabs) but preserve newlines so
-# structured output like markdown stays intact. A separate pass collapses 3+
-# blank lines into a single blank line.
+# Collapse inline whitespace but keep newlines so markdown/structure survives.
 _INLINE_WS = re.compile(r"[ \t]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
 _TRAILING_INLINE_WS = re.compile(r"[ \t]+\n")
 
 
 class OutputProcessor:
-    """Cleans and validates generated text against an OutputPolicy.
-
-    Usage pattern:
-      cleaned = processor.clean(text, ctx, policy)
-      result = processor.validate(cleaned, ctx, policy)
-      if not result.ok: retry
-    """
+    """Cleans and validates generated text against an OutputPolicy."""
 
     def __init__(self, default_policy: Optional[OutputPolicy] = None):
         self._default = default_policy or OutputPolicy()

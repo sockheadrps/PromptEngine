@@ -1,9 +1,3 @@
-"""Middleware hooks around PromptEngine.generate_once / generate_stream.
-
-A middleware is any object with a `before(request)` and/or `after(request, result)`
-method (sync or async). Return `None` to pass through, or a new value to replace.
-Middlewares run in registration order on the way in, reverse on the way out.
-"""
 from __future__ import annotations
 
 import inspect

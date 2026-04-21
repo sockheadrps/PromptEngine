@@ -1,8 +1,8 @@
-# Generic Modular Prompt Engine Design
+# Design
 
-This document describes a reusable architecture for building prompts from modular state, templates, rules, examples, and runtime overlays. It intentionally avoids tying the design to any specific product domain, UI, model provider, or output type.
+A reusable architecture for building prompts from modular state, templates, rules, examples, and runtime overlays. Domain, UI, model provider, and output type are left to the caller.
 
-The core idea is to treat prompt generation as a deterministic pipeline with controlled stochastic choices. The library should separate what is known, what is temporarily true, how prompts are assembled, how model parameters are chosen, and how outputs are cleaned or rejected.
+Prompt generation is a deterministic pipeline with controlled stochastic choices. The library separates what is known, what is temporarily true, how prompts are assembled, how model parameters are chosen, and how outputs are cleaned or rejected.
 
 ## Goals
 
@@ -25,7 +25,7 @@ The core idea is to treat prompt generation as a deterministic pipeline with con
 
 ## Conceptual Model
 
-The engine can be thought of as six layers:
+Six layers:
 
 1. Configuration
 2. Context State
@@ -34,11 +34,9 @@ The engine can be thought of as six layers:
 5. Generation Runtime
 6. Output Processing
 
-Each layer has a different responsibility. The library becomes powerful because these concerns stay separate but interoperable.
-
 ## 1. Configuration
 
-Configuration defines the stable operating boundaries for generation.
+Stable operating boundaries for generation.
 
 Examples:
 
@@ -53,7 +51,7 @@ Examples:
 - Cache sizes
 - Debug parameter locking
 
-Configuration should be declarative and injectable. A prompt builder should not need to know where a model is hosted or how HTTP calls are made.
+Configuration is declarative and injectable. A prompt builder doesn't need to know where a model is hosted or how HTTP calls are made.
 
 Suggested shape:
 
@@ -74,9 +72,7 @@ type GenerationConfig = {
 
 ## 2. Context State
 
-Context state represents the facts and transient conditions that influence prompt construction.
-
-The design separates context into durable base state and temporary overlays.
+Facts and transient conditions that influence prompt construction. Split into durable base state and temporary overlays.
 
 Base state:
 
@@ -125,8 +121,7 @@ type ContextOverlay = {
 
 ## Iteration Turn Overlays
 
-Iteration loops (user responds to an output, the app regenerates) are
-modelled as overlays rather than a separate chat-history primitive. A
+Iteration loops are overlays, not a separate chat-history primitive. A
 **turn overlay** is an ordinary overlay whose metadata carries the user's
 verbatim follow-up plus an optional compacted form:
 
@@ -139,18 +134,17 @@ metadata: {
 ```
 
 The overlay's active `text` is the compacted form when present, otherwise
-the verbatim. Compaction is produced by a named route (e.g.
-`compact_turn`) using the same engine surface — no special code path.
-Preserving the verbatim in metadata means the caller can:
+the verbatim. Compaction runs through a named route (e.g. `compact_turn`)
+on the same engine surface — no special code path. Preserving the verbatim
+in metadata lets the caller:
 
 - Revert to verbatim (swap `text` ↔ `metadata.verbatim`)
 - Re-compact (re-run the compaction route against `metadata.verbatim`)
 - Audit what the user actually said versus what was shown to the model
 
-A small helper (`make_turn_overlay(verbatim, compacted=None, priority=25)`)
-is the recommended constructor so the `kind: "turn"` contract is uniform.
-Orchestration (when to compact, what params to use) stays in the caller —
-the library only provides the data primitive and the route.
+`make_turn_overlay(verbatim, compacted=None, priority=25)` is the
+recommended constructor so the `kind: "turn"` contract is uniform.
+Orchestration (when to compact, what params to use) stays in the caller.
 
 ## Template Slots
 
@@ -160,7 +154,7 @@ Templates should allow explicit slots such as:
 The task concerns {subject}.{focus_sentence}{constraint_sentence}
 ```
 
-The important pattern is not the exact placeholders, but the slot contract:
+The slot contract:
 
 - Slots are named.
 - Slot values come from structured state.
@@ -168,7 +162,7 @@ The important pattern is not the exact placeholders, but the slot contract:
 - Missing fields do not silently erase important context.
 - The renderer can append missing details if a template lacks newer slots.
 
-This last point is key. A long-lived user-authored template may predate newer context fields. The renderer should be able to detect that a field was not represented and append it safely.
+Appending matters when a long-lived user-authored template predates newer context fields. The renderer detects that a field wasn't represented and appends it safely.
 
 Example:
 
@@ -188,24 +182,20 @@ type TemplateField = {
 
 ## Template Inference
 
-The system can infer a reusable template from a rendered prompt by replacing known current values with slots.
+A reusable template can be inferred from a rendered prompt by replacing known current values with slots. Useful when a user edits the rendered text directly and the engine needs to recover slots for future updates.
 
-This is useful when a user edits the rendered text directly. Instead of treating the edited prompt as static forever, the engine can recover slots for future updates.
-
-Example process:
+Process:
 
 1. Start with rendered text.
 2. Compare against known current field values.
 3. Replace exact matches with slot tokens.
 4. Store the inferred template.
 
-This should be conservative. Only replace values that are known and unambiguous.
+Only replace values that are known and unambiguous.
 
 ## 3. Prompt Assets
 
-Prompt assets are domain-editable text blocks and option pools used by builders.
-
-They should live outside the runtime service layer.
+Domain-editable text blocks and option pools used by builders. They live outside the runtime service layer.
 
 Asset categories:
 
@@ -219,7 +209,7 @@ Asset categories:
 - Injection templates
 - Fallback prompts
 
-The design principle is: prompt text belongs in prompt modules, not in orchestration code.
+Prompt text belongs in prompt modules, not in orchestration code.
 
 Suggested structure:
 
@@ -235,16 +225,14 @@ type PromptAssets = {
 
 ## 4. Prompt Builders
 
-Prompt builders convert active context plus request state into model-ready messages.
-
-A builder should be thin:
+Builders convert active context plus request state into model-ready messages. A builder is thin:
 
 - Pick from configured asset pools.
 - Format slots.
 - Join sections.
 - Return a prompt package.
 
-It should not:
+It does not:
 
 - Call the model.
 - Mutate long-lived state.
@@ -277,7 +265,7 @@ Routing can use:
 - Feature flags
 - Current context markers
 
-Route selection should be explicit and inspectable. If two prompt contexts are active, the engine should have a clear precedence rule rather than relying on incidental `if` order.
+Route selection is explicit and inspectable. When two prompt contexts are active, precedence is a clear rule rather than incidental `if` order.
 
 Example:
 
@@ -292,9 +280,9 @@ type PromptRoute = {
 
 ## Prompt Injections
 
-An injection is a small optional prompt module that augments a base prompt.
+A small optional prompt module that augments a base prompt.
 
-Examples in generic terms:
+Examples:
 
 - A time-limited event occurred.
 - A choice or result is active.
@@ -302,7 +290,7 @@ Examples in generic terms:
 - A relevant profile fact may be included.
 - A tool result should be referenced.
 
-Injection modules should return both instruction text and optional examples.
+Injection modules return instruction text and optional examples.
 
 ```ts
 type PromptInjection = {
@@ -313,13 +301,13 @@ type PromptInjection = {
 };
 ```
 
-Injections can be probabilistic, but the probabilities should be part of the module configuration so behavior is testable.
+Injections can be probabilistic, but probabilities belong in the module configuration so behavior is testable.
 
 ## Controlled Randomness
 
-Randomness is useful for variety, but it should be deliberate.
+Randomness is useful for variety when scoped.
 
-Use controlled randomness for:
+Use it for:
 
 - Picking examples
 - Picking style/persona fragments
@@ -335,7 +323,7 @@ Avoid randomness for:
 - Provider selection
 - Persistence behavior
 
-The engine should accept a random source so tests can seed it.
+The engine accepts a random source so tests can seed it.
 
 ```ts
 interface RandomSource {
@@ -377,9 +365,7 @@ request
 
 ## Provider Adapter
 
-Provider-specific details should be isolated.
-
-The engine should use a normalized generation request:
+Provider-specific details stay behind an adapter. The engine uses a normalized generation request:
 
 ```ts
 type ProviderRequest = {
@@ -414,13 +400,11 @@ type ProviderResponse = {
 };
 ```
 
-This allows the library to support local models, hosted APIs, and mock providers without changing prompt logic.
+Local models, hosted APIs, and mock providers all fit without changing prompt logic.
 
 ## Debug Parameter Locking
 
-Normal usage may jitter parameters for natural variety. Debug mode often needs exact repeatability.
-
-The runtime should support a lock mode:
+Normal usage may jitter parameters for natural variety. Debug mode needs exact repeatability. Lock mode:
 
 - No temperature jitter.
 - No token budget jitter.
@@ -429,13 +413,11 @@ The runtime should support a lock mode:
 - Capture exact user prompt.
 - Capture chosen route and injections.
 
-This makes single-step testing representative of normal structure while still inspectable.
+Single-step testing matches normal structure while staying inspectable.
 
 ## 6. Output Processing
 
-Output processing should be code-driven, not left entirely to the model.
-
-Common steps:
+Code-driven, not left entirely to the model. Common steps:
 
 - Trim whitespace.
 - Remove labels or prefixes.
@@ -465,9 +447,7 @@ type ValidationResult = {
 
 ## Recent Output Memory
 
-A small recent-output memory helps reduce repetition.
-
-It can compare:
+A small recent-output memory reduces repetition. Comparison options:
 
 - Exact normalized text
 - Token overlap
@@ -475,14 +455,13 @@ It can compare:
 - Shared special tokens
 - Similarity score
 
-This memory should be bounded and context-aware. Clearing it on major context changes is often useful, while preserving it across minor overlays can avoid loops.
+Bounded and context-aware. Clear on major context changes; preserve across minor overlays to avoid loops.
 
 ## Run History
 
-Distinct from recent-output memory. Recent-output memory exists to detect
-repetition (Jaccard over text). Run history exists to let UIs and callers
-*replay* past runs — reloading the exact request shape that produced a
-given output.
+Separate from recent-output memory. Recent-output memory detects repetition
+(Jaccard over text). Run history lets UIs and callers *replay* past runs by
+reloading the exact request shape that produced an output.
 
 Each record captures:
 
@@ -493,10 +472,10 @@ Each record captures:
 - A timestamp
 - Optional metadata
 
-Keep it bounded and keep it separate. Two primitives each doing one thing
-beats a single struct with a growing optional-field bag. A caller wanting
-chat-style history can read run history; a caller only wanting dedup
-continues to use recent-output memory; neither depends on the other.
+Bounded and separate. Two primitives each doing one thing beats a single
+struct with a growing optional-field bag. A caller wanting chat-style
+history reads run history; a caller wanting dedup uses recent-output
+memory; neither depends on the other.
 
 ## Streaming
 
@@ -512,19 +491,18 @@ Providers declare support by implementing `stream()` alongside `generate()`.
 A helper `supports_streaming(provider)` lets the engine refuse the request
 cleanly when the adapter is non-streaming.
 
-Streaming deliberately runs the output processor exactly once on the
-aggregated buffer — retries are skipped because replaying a stream
-mid-output is more surprising than useful. Callers that need retry
-semantics can fall back to `generate_once` when the terminal result is
-rejected. This keeps the pipeline identical for both paths: a single
-buffer is cleaned, validated, recorded to run history, and passed through
-middleware.
+Streaming runs the output processor exactly once on the aggregated buffer.
+Retries are skipped because replaying a stream mid-output is more
+surprising than useful — callers that need retry semantics fall back to
+`generate_once` when the terminal result is rejected. Both paths share a
+single pipeline: one buffer is cleaned, validated, recorded to run history,
+and passed through middleware.
 
 ## Middleware
 
-Cross-cutting concerns — logging, metrics, caching, rate-limiting, redaction
-— belong neither inside builders nor inside providers. The engine exposes a
-small middleware hook around the generation path:
+Logging, metrics, caching, rate-limiting, and redaction don't belong inside
+builders or providers. The engine exposes a middleware hook around the
+generation path:
 
 ```
 Middleware:
@@ -534,51 +512,42 @@ Middleware:
 
 Either method may be sync or async. Returning `None` means pass-through.
 Middleware runs in registration order on the way in and reverse order on
-the way out, so outer middleware wraps inner. Both `generate_once` and
-`generate_stream` pass through the same hooks.
+the way out, so outer wraps inner. Both `generate_once` and
+`generate_stream` use the same hooks.
 
-What middleware does NOT do: intercept provider calls directly, add retry
-semantics, or mutate prompt construction. Those concerns live in the
-builder, the output processor, and the route config respectively. Keeping
-middleware small preserves the invariant that *all generation goes through
-one code path* — schedulers, stepper debuggers, and middleware all see the
-same `GenerationResult`.
+Middleware does NOT intercept provider calls, add retry semantics, or
+mutate prompt construction — those concerns live in the builder, output
+processor, and route config. Keeping middleware narrow preserves the
+invariant that all generation goes through one code path: schedulers,
+stepper debuggers, and middleware all see the same `GenerationResult`.
 
 ## Prompt-Size Budget
 
-When overlays accumulate (iteration turns, user preferences, transient
-facts), the built prompt can grow past what the model or the surrounding
-app can tolerate. The engine supports an optional `max_prompt_chars`
-budget on `GenerationConfig` (or per-route via `generation_overrides`).
-
-When set, the engine:
+Accumulating overlays (iteration turns, user preferences, transient facts)
+can grow the built prompt past what the model or the surrounding app
+tolerates. `GenerationConfig` supports an optional `max_prompt_chars`
+budget (or per-route via `generation_overrides`). When set, the engine:
 
 1. Builds the prompt package normally.
 2. If `len(system) + len(user)` exceeds the budget, drops the
    lowest-priority overlay from the snapshot and rebuilds.
 3. Repeats until the prompt fits or no overlays remain.
 
-Priority is the existing overlay field — higher means applied first and
-also "more important", so lowest-priority drops first. Ties break on
-overlay name for determinism.
+Priority doubles as importance: higher applies first and drops last. Ties
+break on overlay name for determinism.
 
-The budget operates on character count rather than token count because a
-character budget is provider-agnostic and has no tokenizer dependency. It
-is conservative relative to token budgets (tokens are usually 3–4 chars
-each), which matches the intent of "don't let overlays silently balloon
-the prompt."
+Character count, not token count — provider-agnostic, no tokenizer
+dependency. Conservative relative to token budgets (tokens are usually 3–4
+chars each).
 
 The debug trace reports budget state under `metadata.budget`:
-`{budget_chars, final_chars, dropped, over_budget}`. When the prompt is
+`{budget_chars, final_chars, dropped, over_budget}`. If the prompt is
 still over budget after exhausting overlays, `over_budget=True` flags it
-rather than erroring — the engine never silently drops user-authored base
-context.
+rather than erroring — the engine never drops user-authored base context.
 
 ## Programmatic Additions
 
-Some output features are better handled after generation.
-
-Examples:
+Some output features are better handled after generation:
 
 - Appending structured tokens
 - Expanding one generated marker into repeated markers
@@ -586,15 +555,15 @@ Examples:
 - Enforcing allowed asset names
 - Removing unsupported model-invented tokens
 
-The pattern is:
+The pattern:
 
 1. Let the model decide natural language content.
 2. Let code enforce structured affordances.
-3. Keep generated text and programmatic additions separately inspectable when possible.
+3. Keep generated text and programmatic additions separately inspectable.
 
 ## Metrics and Inspection
 
-Every generation should be able to return a debug envelope:
+Every generation can return a debug envelope:
 
 ```ts
 type GenerationTrace = {
@@ -617,16 +586,16 @@ type GenerationTrace = {
 };
 ```
 
-This trace is what makes a one-step debug UI useful. The step should use the same context resolution, route selection, prompt builders, model parameters, and post-processing as normal generation. The only difference is that the scheduler is paused and the output is not automatically emitted downstream.
+A one-step debug UI uses the same context resolution, route selection, builders, model parameters, and post-processing as normal generation. The scheduler is paused and the output isn't emitted downstream; everything else is identical.
 
 ## Scheduler Versus Stepper
 
-Separate generation from scheduling.
+Generation is separate from scheduling.
 
 The scheduler decides when to call the engine repeatedly.
 The stepper calls the same engine once.
 
-Both should use the same path:
+Both use the same path:
 
 ```txt
 generateOnce(request) -> GenerationResult
@@ -638,7 +607,7 @@ Then:
 - Debug stepper invokes `generateOnce` manually.
 - Tests invoke `generateOnce` with seeded state.
 
-This prevents debug behavior from drifting away from production behavior.
+Debug behavior stays aligned with production.
 
 ## Suggested Library Modules
 

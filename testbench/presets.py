@@ -1,10 +1,3 @@
-"""Preset prompt routes used by the demo server.
-
-These are intentionally generic so the engine stays domain-agnostic. Each
-preset shows a different composition style — direct instruction, persona +
-examples, structured task, summarisation, etc. — so the GUI can demonstrate
-the engine's full surface area against a local model.
-"""
 from __future__ import annotations
 
 from promptlibretto import (
@@ -17,10 +10,6 @@ from promptlibretto import (
 )
 from promptlibretto.builders.builder import BuildContext
 
-
-# ----------------------------------------------------------------------
-# asset bootstrap
-# ----------------------------------------------------------------------
 
 def build_asset_registry() -> PromptAssetRegistry:
     reg = PromptAssetRegistry()
@@ -110,10 +99,6 @@ def build_asset_registry() -> PromptAssetRegistry:
     return reg
 
 
-# ----------------------------------------------------------------------
-# builders
-# ----------------------------------------------------------------------
-
 def _frame(name: str):
     def fn(ctx: BuildContext) -> str:
         return ctx.assets.frame(name)
@@ -191,12 +176,6 @@ def _suggest_count_instruction():
 
 
 def _pending_user_input_section():
-    """Include the user's current draft prompt so suggestions are tailored.
-
-    Without this, the model only sees the base context and produces generic
-    dimensions that often duplicate information already present in the user's
-    actual question.
-    """
     def fn(ctx: BuildContext) -> str:
         text = str(ctx.request.inputs.get("user_input") or "").strip()
         if not text:
@@ -230,7 +209,6 @@ def _turn_user_response():
 
 
 def _existing_overlays_section():
-    """Render the user's existing overlays so the model can avoid duplicates."""
     def fn(ctx: BuildContext) -> str:
         existing = ctx.request.inputs.get("existing") or []
         if not existing:
@@ -253,10 +231,6 @@ def _existing_overlays_section():
         )
     return fn
 
-
-# ----------------------------------------------------------------------
-# routes
-# ----------------------------------------------------------------------
 
 def build_router(_assets: PromptAssetRegistry) -> PromptRouter:
     router = PromptRouter(default_route="default")

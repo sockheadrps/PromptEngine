@@ -35,26 +35,12 @@ class GenerationResult:
 
 @dataclass
 class GenerationChunk:
-    """Single event from `PromptEngine.generate_stream`.
-
-    Intermediate events carry a `delta` text. The terminal event has
-    `done=True` and a fully-populated `result` so callers can pick up
-    `accepted`, `route`, and optionally the trace without doing a second
-    non-streaming round.
-    """
-
     delta: str = ""
     done: bool = False
     result: Optional[GenerationResult] = None
 
 
 class PromptEngine:
-    """The single entry point for the library.
-
-    All generation goes through `generate_once`. Schedulers loop on this; debug
-    steppers call it once. They share the same code path, which is the design
-    document's core requirement.
-    """
 
     def __init__(
         self,
@@ -193,14 +179,10 @@ class PromptEngine:
     async def generate_stream(
         self, request: GenerationRequest
     ) -> AsyncIterator[GenerationChunk]:
-        """Stream a single generation, yielding text deltas and a final result.
+        """Stream deltas, then a terminal chunk with the final result.
 
-        Streaming paths always make exactly one provider call — retries are
-        skipped because replaying a stream mid-output is more surprising
-        than useful. Callers that need retry semantics should fall back to
-        `generate_once` when a chunk's terminal `result.accepted` is False.
-
-        The provider must implement `stream`; if it doesn't, this raises.
+        Makes exactly one provider call; output-policy retries are skipped.
+        If `result.accepted` is False, fall back to `generate_once`.
         """
         if not supports_streaming(self.provider):
             raise RuntimeError(
@@ -301,7 +283,6 @@ class PromptEngine:
 
         yield GenerationChunk(done=True, result=result)
 
-    # --- internals -----------------------------------------------------
     def _build_with_budget(
         self,
         route,
@@ -309,12 +290,8 @@ class PromptEngine:
         snapshot,
         injections: list[PromptInjection],
     ):
-        """Build the prompt package, trimming overlays if a char budget is set.
-
-        Lowest-priority overlays are dropped first. Ties break by name so the
-        result is deterministic. The returned `trim_info` dict is `None` when
-        no budget is configured; otherwise it reports the final size, budget,
-        and names dropped (empty list if none were needed).
+        """Build the package; if over `max_prompt_chars`, drop lowest-priority
+        overlays until it fits. Ties break by name for determinism.
         """
         def build(snap):
             ctx = BuildContext(
@@ -348,7 +325,6 @@ class PromptEngine:
 
         dropped: list[str] = []
         current_snapshot = snapshot
-        # Drop lowest-priority overlays one at a time until under budget.
         while size(package) > budget and current_snapshot.overlays:
             victim = min(
                 current_snapshot.overlays.items(),

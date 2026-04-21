@@ -47,7 +47,6 @@ def test_composite_prepends_active_context():
         user_sections=(section(lambda c: "Q"),),
     )
     pkg = _build(builder, store=store)
-    # base + overlay are both in snapshot.active, which prepends the user text
     assert "BASE" in pkg.user
     assert "OVER" in pkg.user
     assert pkg.user.endswith("Q")
