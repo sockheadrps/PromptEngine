@@ -79,6 +79,7 @@ class RouteSpec:
         }
 
     def build(self) -> PromptRoute:
+        from ..builders.builder import SafeFormatDict
         from ..builders.composite import CompositeBuilder, section
 
         system_text = self.system
@@ -87,10 +88,7 @@ class RouteSpec:
         def _user(ctx) -> str:
             inputs = dict(getattr(ctx.request, "inputs", {}) or {})
             inputs.setdefault("input", inputs.get("input", ""))
-            try:
-                return user_tpl.format_map(_SafeDict(inputs))
-            except Exception:
-                return user_tpl
+            return user_tpl.format_map(SafeFormatDict(inputs))
 
         sys_sections = (section(system_text),) if system_text.strip() else ()
         builder = CompositeBuilder(
@@ -108,8 +106,3 @@ class RouteSpec:
             description=self.description,
             spec=self,
         )
-
-
-class _SafeDict(dict):
-    def __missing__(self, key):
-        return ""

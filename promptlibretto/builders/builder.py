@@ -42,6 +42,13 @@ class PromptPackage:
     injections: Sequence[PromptInjection] = field(default_factory=tuple)
 
 
+class SafeFormatDict(dict):
+    """`format_map` dict that renders missing keys as empty strings."""
+
+    def __missing__(self, key: str) -> str:
+        return ""
+
+
 class BuildContext:
     """Aggregates the inputs a builder / section callable needs."""
 

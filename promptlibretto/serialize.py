@@ -11,11 +11,12 @@ This is the supported deploy path. The JSON schema is `{"version": 1, ...}`.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Optional, Sequence, Union
 
-from .builders.builder import BuildContext, GenerationRequest
+from .builders.builder import BuildContext, GenerationRequest, SafeFormatDict
 from .builders.composite import CompositeBuilder
 from .config import GenerationConfig
 from .context.overlay import ContextOverlay
@@ -58,9 +59,9 @@ def export_json(
     runtime_entries: list[tuple[str, int, str, str]] = []  # name, priority, mode, template
     fixed_overlays: dict[str, ContextOverlay] = {}
     for name, overlay in full_snapshot.overlays.items():
-        mode = str((overlay.metadata or {}).get("runtime") or "").lower()
+        mode = str(overlay.metadata.get("runtime") or "").lower()
         if mode in ("optional", "required"):
-            tmpl = str((overlay.metadata or {}).get("template") or "")
+            tmpl = str(overlay.metadata.get("template") or "")
             runtime_entries.append((name, overlay.priority, mode, tmpl))
         else:
             fixed_overlays[name] = overlay
@@ -131,7 +132,7 @@ def export_json(
             }
             if overlay.expires_at is not None:
                 entry["expires_at"] = overlay.expires_at
-            meta = {k: v for k, v in (overlay.metadata or {}).items() if k != "runtime"}
+            meta = {k: v for k, v in overlay.metadata.items() if k != "runtime"}
             if meta:
                 entry["metadata"] = meta
             out["overlays"].append(entry)
@@ -274,16 +275,10 @@ def _section_to_json(rendered: str) -> Any:
     return {"template": rendered.replace(_INPUT_MARKER, "{input}")}
 
 
-class _SafeFormatDict(dict):
-    def __missing__(self, key: str) -> str:
-        return ""
-
-
 def _slot_name_from_template(template: str) -> Optional[str]:
     """Extract the slot name from a template containing a `{name}` placeholder.
     Supports both pure `{name}` and richer templates like `"the topic is {name}"`.
     Returns None if no placeholder is found."""
-    import re
     m = re.search(r"\{(\w+)\}", template or "")
     return m.group(1) if m else None
 
@@ -294,6 +289,6 @@ def _section_from_json(item: Any):
     if isinstance(item, Mapping) and "template" in item:
         template = str(item["template"])
         def _render(ctx: BuildContext, _t: str = template):
-            return _t.format_map(_SafeFormatDict(dict(ctx.request.inputs or {})))
+            return _t.format_map(SafeFormatDict(dict(ctx.request.inputs or {})))
         return _render
     raise ValueError(f"unsupported section entry: {item!r}")

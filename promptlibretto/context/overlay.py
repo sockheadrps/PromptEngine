@@ -37,11 +37,14 @@ def make_runtime_overlay(
     placeholder: str = "",
     priority: int = 20,
 ) -> ContextOverlay:
-    """Overlay that renders as a `{name}` slot in the active context (filled
-    in by the builder's `format_map` step).
+    """Overlay that holds a call-time slot instead of durable text.
 
     `mode` must be `"optional"` or `"required"` — required slots are expected
-    to be supplied per-call; optional ones format to empty when absent.
+    to be supplied per-call; optional ones render empty when absent. The
+    serializer emits these as templated user_sections so the caller's value
+    lands at a specific position (raw `{name}` or a richer template string
+    stored in `metadata["template"]`, e.g. `"Your mood is: {}."`).
+
     `placeholder` is stored as the overlay text but never rendered while the
     runtime metadata is set; it's there so revert/inspection tools have
     something to show.
