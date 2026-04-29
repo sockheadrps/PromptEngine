@@ -1,5 +1,7 @@
 # promptlibretto
 
+![promptlibretto intro](docs/assets/intro.gif)
+
 A prompt-engineering library plus a browser studio for designing,
 tuning, and exporting prompts as portable JSON.
 
@@ -42,9 +44,10 @@ Open `http://localhost:8000`. The studio has two pages:
   **Export Model JSON** to copy the canonical registry.
 - **Builder** (`/builder`) — visual form-based editor for constructing a
   registry from scratch. Hit **Load Example** to see a fully populated
-  registry covering every section, or **Import JSON** to load an
-  existing one. **Generate Registry** exports the JSON; **Open in
-  Studio** sends it directly to the Studio.
+  registry, or **Import JSON** to load an existing one. The **Finalizer**
+  panel shows live Registry JSON and an **Example Prompt** tab that renders
+  a text preview of the assembled prompt as you build. **Generate Registry**
+  exports the JSON; **Open in Studio** sends it directly to the Studio.
 
 ![Studio Compose view](docs/assets/screenshots/studio-compose.png)
 

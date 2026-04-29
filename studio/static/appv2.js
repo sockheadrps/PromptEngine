@@ -181,21 +181,24 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       { field: "name", label: "Name", type: "text" },
       { field: "text", label: "Always-shown text", type: "textarea" },
       { field: "fragments", label: "Conditional fragments", type: "fragments" },
+      { field: "items", label: "Pool items", type: "lines" },
     ],
     personas: [
       { field: "id", label: "ID", type: "text" },
       { field: "context", label: "Context", type: "textarea" },
-      { field: "base_directives", label: "Base Directives (one per line)", type: "lines" },
+      { field: "base_directives", label: "Base Directives", type: "lines" },
     ],
     sentiment: [
       { field: "id", label: "ID", type: "text" },
       { field: "context", label: "Context", type: "text" },
-      { field: "nudges", label: "Nudges (one per line)", type: "lines" },
-      { field: "examples", label: "Examples (one per line)", type: "lines" },
+      { field: "scale_emotion", label: "Scale Emotion", type: "text" },
+      { field: "nudges", label: "Nudges", type: "lines" },
+      { field: "examples", label: "Examples", type: "lines" },
     ],
     static_injections: [
       { field: "name", label: "Name", type: "text" },
       { field: "text", label: "Text", type: "textarea" },
+      { field: "items", label: "Pool items", type: "lines" },
     ],
     runtime_injections: [
       { field: "id", label: "ID", type: "text" },
@@ -206,14 +209,15 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     output_prompt_directions: [
       { field: "name", label: "Name", type: "text" },
       { field: "text", label: "Text", type: "textarea" },
+      { field: "items", label: "Pool items", type: "lines" },
     ],
     examples: [
       { field: "name", label: "Name", type: "text" },
-      { field: "items", label: "Items (one per line)", type: "lines" },
+      { field: "items", label: "Items", type: "lines" },
     ],
     prompt_endings: [
       { field: "name", label: "Name", type: "text" },
-      { field: "items", label: "Items (one per line)", type: "lines" },
+      { field: "items", label: "Items", type: "lines" },
     ],
   };
 
@@ -451,12 +455,24 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         )}</span><textarea ${common} rows="3">${escapeHtml(v ?? "")}</textarea></label>`;
       }
       if (f.type === "lines") {
-        const text = Array.isArray(v) ? v.join("\n") : "";
-        return `<label class="registry-add-row"><span>${escapeHtml(
-          f.label
-        )}</span><textarea ${common} rows="3" placeholder="one per line">${escapeHtml(
-          text
-        )}</textarea></label>`;
+        const arr = Array.isArray(v) ? v : [];
+        const rowsHtml = arr.map((val, i) =>
+          `<div class="list-item-row">` +
+          `<input type="text" value="${escapeHtml(val)}" placeholder="item ${i + 1}" ` +
+          `data-list-section="${escapeHtml(sectionKey)}" data-list-item="${escapeHtml(itemId)}" ` +
+          `data-list-field="${escapeHtml(f.field)}" data-list-index="${i}">` +
+          `<button type="button" class="list-item-remove" title="Remove" ` +
+          `data-list-remove data-list-section="${escapeHtml(sectionKey)}" ` +
+          `data-list-item="${escapeHtml(itemId)}" data-list-field="${escapeHtml(f.field)}" ` +
+          `data-list-index="${i}">×</button>` +
+          `</div>`
+        ).join("");
+        return `<div class="registry-add-row"><span>${escapeHtml(f.label)}</span>` +
+          `<div class="list-field" data-list-host="${escapeHtml(sectionKey)}:${escapeHtml(itemId)}:${escapeHtml(f.field)}">` +
+          rowsHtml +
+          `<button type="button" class="list-item-add" ` +
+          `data-list-add="${escapeHtml(sectionKey)}:${escapeHtml(itemId)}:${escapeHtml(f.field)}">+ Add</button>` +
+          `</div></div>`;
       }
       if (f.type === "bool") {
         return `<label class="registry-add-row registry-add-row--inline"><span>${escapeHtml(
@@ -661,6 +677,36 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
             if (f === "id" || f === "name") buildControls();
           });
         });
+        ed.querySelectorAll("input[data-list-index]").forEach((inp) => {
+          inp.addEventListener("input", () => {
+            const item = findItemById(inp.dataset.listSection, inp.dataset.listItem);
+            if (!item) return;
+            const field = inp.dataset.listField;
+            const index = parseInt(inp.dataset.listIndex, 10);
+            if (!Array.isArray(item[field])) item[field] = [];
+            item[field][index] = inp.value;
+          });
+        });
+        ed.querySelectorAll("[data-list-remove]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const item = findItemById(btn.dataset.listSection, btn.dataset.listItem);
+            if (!item) return;
+            const field = btn.dataset.listField;
+            const index = parseInt(btn.dataset.listIndex, 10);
+            if (Array.isArray(item[field])) item[field].splice(index, 1);
+            refreshSectionPreviews();
+          });
+        });
+        ed.querySelectorAll("[data-list-add]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const [sec, id, field] = btn.dataset.listAdd.split(":");
+            const item = findItemById(sec, id);
+            if (!item) return;
+            if (!Array.isArray(item[field])) item[field] = [];
+            item[field].push("");
+            refreshSectionPreviews();
+          });
+        });
         wireFragmentRows(ed, /* editor */ true);
       }
 
@@ -696,96 +742,6 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         });
       }
     }
-  }
-
-  // ─── Add-item form (collapsible, schema-strict) ────────────
-  function addFormHtml(key) {
-    const schema = ITEM_SCHEMA[key] || [
-      { field: "name", label: "Name", type: "text" },
-      { field: "text", label: "Text", type: "textarea" },
-    ];
-    const rows = schema.map((f) => {
-      const inputId = `addform-${key}-${f.field}`;
-      if (f.type === "textarea") {
-        return `<label class="registry-add-row"><span>${escapeHtml(
-          f.label
-        )}</span><textarea id="${inputId}" rows="3"></textarea></label>`;
-      }
-      if (f.type === "lines") {
-        return `<label class="registry-add-row"><span>${escapeHtml(
-          f.label
-        )}</span><textarea id="${inputId}" rows="3" placeholder="one per line"></textarea></label>`;
-      }
-      if (f.type === "bool") {
-        return `<label class="registry-add-row registry-add-row--inline"><span>${escapeHtml(
-          f.label
-        )}</span><input type="checkbox" id="${inputId}" checked></label>`;
-      }
-      if (f.type === "section-checks") {
-        const allKeys = sectionKeys().filter((k) => k !== key);
-        const boxes = allKeys
-          .map(
-            (sk) =>
-              `<label class="registry-check"><input type="checkbox" data-include="${escapeHtml(
-                sk
-              )}"><span>${escapeHtml(SECTION_LABELS[sk] || sk)}</span></label>`
-          )
-          .join("");
-        return `<div class="registry-add-row"><span>${escapeHtml(
-          f.label
-        )}</span><div class="registry-checks" id="${inputId}">${boxes}</div></div>`;
-      }
-      if (f.type === "fragments") {
-        return fragmentsEditorHtml(key, "", [], { editor: false });
-      }
-      return `<label class="registry-add-row"><span>${escapeHtml(
-        f.label
-      )}</span><input type="text" id="${inputId}"></label>`;
-    });
-    return (
-      `<div class="registry-add-form" hidden data-form-for="${escapeHtml(key)}">` +
-      rows.join("") +
-      `<div class="registry-add-actions">` +
-      `<button type="button" class="ghost-action small" data-add-cancel="${escapeHtml(
-        key
-      )}">Cancel</button>` +
-      `<button type="button" class="ghost-action small" data-add-submit="${escapeHtml(
-        key
-      )}">Save</button>` +
-      `</div></div>`
-    );
-  }
-
-  function readAddForm(key, formEl) {
-    const schema = ITEM_SCHEMA[key] || [];
-    const item = {};
-    for (const f of schema) {
-      if (f.type === "fragments") {
-        const row = formEl.querySelector(
-          `.registry-fragments-row[data-frag-form="${key}"]`
-        );
-        const frags = readFragmentsFromRow(row);
-        if (frags.length) item[f.field] = frags;
-        continue;
-      }
-      const el = formEl.querySelector(`#addform-${key}-${f.field}`);
-      if (!el) continue;
-      if (f.type === "lines") {
-        item[f.field] = el.value
-          .split("\n")
-          .map((s) => s.trim())
-          .filter(Boolean);
-      } else if (f.type === "bool") {
-        item[f.field] = !!el.checked;
-      } else if (f.type === "section-checks") {
-        item[f.field] = Array.from(el.querySelectorAll("input[data-include]:checked")).map(
-          (cb) => cb.dataset.include
-        );
-      } else {
-        item[f.field] = el.value.trim();
-      }
-    }
-    return item;
   }
 
   function buildControls() {
@@ -884,23 +840,25 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           )} at run time</span></label>`;
       }
 
-      // Sentiment intensity slider — drives the `sentiment.scale` token.
+      // Sentiment intensity slider + scale_template — drives the `sentiment.scale` token.
       let sliderHtml = "";
       if (key === "sentiment") {
         const cur = sectionSliders[key] != null ? sectionSliders[key] : 5;
         const isRand = !!sectionSliderRandom[key];
+        const scaleTmpl = (sec.scale_template) || "";
         sliderHtml =
           `<div class="registry-slider-row">` +
-          `<label>Intensity: <span data-slider-value="${escapeHtml(
-            key
-          )}">${cur}</span> / 10</label>` +
-          `<input type="range" min="1" max="10" value="${cur}" data-slider="${escapeHtml(
-            key
-          )}"${isRand ? " disabled" : ""}>` +
-          `<label class="registry-slider-rand"><input type="checkbox" data-slider-random="${escapeHtml(
-            key
-          )}"${isRand ? " checked" : ""}><span>Random at run time</span></label>` +
-          `</div>`;
+          `<label>Intensity: <span data-slider-value="${escapeHtml(key)}">${cur}</span> / 10</label>` +
+          `<input type="range" min="1" max="10" value="${cur}" data-slider="${escapeHtml(key)}"${isRand ? " disabled" : ""}>` +
+          `<label class="registry-slider-rand"><input type="checkbox" data-slider-random="${escapeHtml(key)}"${isRand ? " checked" : ""}><span>Random at run time</span></label>` +
+          `</div>` +
+          `<details class="registry-scale-details">` +
+          `<summary class="registry-scale-summary">Scale settings</summary>` +
+          `<label class="registry-scale-label">Scale template` +
+          `<span class="registry-scale-hint">use <code>{value}</code> and <code>{emotion}</code></span></label>` +
+          `<input type="text" class="registry-scale-tmpl" data-scale-template value="${escapeHtml(scaleTmpl)}" ` +
+          `placeholder="On a scale of 1-10, intensity is {value} on {emotion}.">` +
+          `</details>`;
       }
 
       // Always render the template-vars block so users can add even when
@@ -939,16 +897,12 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         `<span class="registry-badge ${sec.required ? "req" : ""}">${
           sec.required ? "REQUIRED" : "OPTIONAL"
         }</span>` +
-        `<button type="button" class="registry-add-btn" data-add-toggle="${escapeHtml(
-          key
-        )}" title="Add new item">+</button>` +
         `</span>` +
         `</div>` +
         inputHtml +
         randomHtml +
         sliderHtml +
         varsHtml +
-        addFormHtml(key) +
         `<div class="registry-editors"></div>` +
         `<div class="registry-modes"></div>`;
       containerFor(key).appendChild(card);
@@ -1024,39 +978,14 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           if (slider) slider.disabled = el.checked;
         });
       });
-      host.querySelectorAll("[data-add-toggle]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const k = btn.dataset.addToggle;
-          const card = host.querySelector(`.registry-section[data-key="${k}"]`);
-          const form = card && card.querySelector(`[data-form-for="${k}"]`);
-          if (form) {
-            form.hidden = !form.hidden;
-            if (!form.hidden) wireFragmentRows(form, /* editor */ false);
+      host.querySelectorAll("input[data-scale-template]").forEach((el) => {
+        el.addEventListener("input", () => {
+          if (!registry.sentiment) return;
+          if (el.value.trim()) {
+            registry.sentiment.scale_template = el.value;
+          } else {
+            delete registry.sentiment.scale_template;
           }
-        });
-      });
-      host.querySelectorAll("[data-add-cancel]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const k = btn.dataset.addCancel;
-          const card = host.querySelector(`.registry-section[data-key="${k}"]`);
-          const form = card && card.querySelector(`[data-form-for="${k}"]`);
-          if (form) form.hidden = true;
-        });
-      });
-      host.querySelectorAll("[data-add-submit]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const k = btn.dataset.addSubmit;
-          const card = host.querySelector(`.registry-section[data-key="${k}"]`);
-          const form = card && card.querySelector(`[data-form-for="${k}"]`);
-          if (!form) return;
-          const item = readAddForm(k, form);
-          const idVal = item.id || item.name;
-          if (!idVal) {
-            alert("Item needs an id or name.");
-            return;
-          }
-          registry[k].items.push(item);
-          buildControls();
         });
       });
     }

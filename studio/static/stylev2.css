@@ -2367,6 +2367,15 @@ details summary:hover { color: var(--text-dim); }
 .registry-add-row--inline input { width: auto; }
 .registry-add-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
+.list-field { display: flex; flex-direction: column; gap: 4px; }
+.list-item-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 6px; border-radius: 6px; padding: 2px 2px 2px 0; }
+.list-item-row:nth-child(odd) { background: rgba(212,145,92,0.04); }
+.list-item-row input { border-radius: 6px; padding: 6px 9px; font-size: 12px; }
+.list-item-remove { appearance: none; border: none; background: transparent; color: var(--muted-soft); font-size: 15px; line-height: 1; cursor: pointer; padding: 4px 6px; border-radius: 4px; transition: color 120ms ease; flex-shrink: 0; }
+.list-item-remove:hover { color: var(--accent-rose); }
+.list-item-add { appearance: none; border: 1px dashed rgba(212,145,92,0.3); background: transparent; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; padding: 5px 10px; border-radius: 6px; cursor: pointer; margin-top: 2px; width: 100%; transition: all 140ms ease; }
+.list-item-add:hover { color: var(--accent); border-color: rgba(212,145,92,0.5); background: rgba(212,145,92,0.04); }
+
 /* ── Registry: per-array runtime mode selectors ───────────── */
 .registry-modes { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .registry-modes:empty { display: none; }
@@ -2464,6 +2473,27 @@ details summary:hover { color: var(--text-dim); }
 }
 .registry-slider-rand input { width: auto; margin: 0; }
 .registry-slider-row input[type=range][disabled] { opacity: 0.4; }
+.registry-scale-details {
+  margin-top: 8px;
+}
+.registry-scale-summary {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--muted); cursor: pointer;
+  user-select: none;
+}
+.registry-scale-summary:hover { color: var(--text-dim); }
+.registry-scale-label {
+  display: block; margin-top: 8px; margin-bottom: 4px;
+  font-size: 11px; color: var(--muted);
+}
+.registry-scale-hint {
+  font-size: 10px; font-style: italic; margin-left: 6px; color: var(--muted-soft);
+}
+.registry-scale-hint code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-style: normal; color: var(--accent-2);
+}
+.registry-scale-tmpl { width: 100%; font-size: 11px; }
 
 /* ── Runtime injections: enable + include_sections sub-list ─ */
 .registry-rti-list { display: flex; flex-direction: column; gap: 8px; }

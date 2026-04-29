@@ -12,6 +12,8 @@ weave the selected items into one prompt.
 The same JSON the studio exports is the JSON the library loads. No
 codegen, no schema drift between the editor and the runtime.
 
+![promptlibretto intro](assets/intro.gif)
+
 ## Install
 
 ```bash

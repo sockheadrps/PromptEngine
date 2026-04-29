@@ -41,6 +41,20 @@
     </div>
   </div>
 
+  <div id="section-info-modal" class="section-info-overlay" hidden onclick="closeSectionInfo()">
+    <div class="section-info-content" onclick="event.stopPropagation()">
+      <div class="section-info-header">
+        <h3 id="section-info-title"></h3>
+        <button type="button" class="section-info-close" onclick="closeSectionInfo()">×</button>
+      </div>
+      <p id="section-info-body" class="section-info-body"></p>
+      <div class="section-info-fields-wrap">
+        <span class="section-info-fields-label">Key fields</span>
+        <ul id="section-info-fields" class="section-info-fields"></ul>
+      </div>
+    </div>
+  </div>
+
   <main class="builder-shell">
 
     <section class="builder-meta-grid">
@@ -93,26 +107,9 @@
               </div>
               <div class="assembly-sidebar">
                 <div class="assembly-adders panel inset-panel">
-                  <div class="assembly-subhead">Add Step</div>
-                  <label>
-                    <span>Step Type</span>
-                    <select id="assembly-step-select" onchange="handleAssemblyStepSelection()"></select>
-                  </label>
-                  <label id="assembly-variant-wrap" class="assembly-variant-wrap">
-                    <span>Variant</span>
-                    <select id="assembly-variant-select"></select>
-                  </label>
-                  <div id="assembly-selection-help" class="assembly-selection-help"></div>
-                  <button type="button" class="primary-btn compact" onclick="addSelectedAssemblyStep()">Add Step</button>
-                </div>
-                <div class="assembly-adders panel inset-panel">
-                  <div class="assembly-subhead">Advanced Tokens</div>
+                  <div class="assembly-subhead">Add Token</div>
                   <div class="assembly-token-groups">
                     <div id="assembly-token-groups"></div>
-                  </div>
-                  <div class="assembly-custom-row">
-                    <input id="assembly-custom-token" type="text" placeholder="Custom token, e.g. examples[sentiment.example_pool]" />
-                    <button type="button" class="ghost-btn" onclick="addCustomAssemblyToken()">Add Token</button>
                   </div>
                 </div>
               </div>
@@ -171,16 +168,26 @@
       <aside class="builder-preview">
         <section class="panel output-panel">
           <div class="panel-head">
-            <div>
-              <span class="panel-title">Registry JSON Output</span>
-              <div id="validation-status" class="validation-status">Not validated yet</div>
+            <div class="preview-tab-row">
+              <button type="button" id="preview-tab-json" class="preview-tab active" onclick="switchPreviewTab('json')">Registry JSON</button>
+              <button type="button" id="preview-tab-prompt" class="preview-tab" onclick="switchPreviewTab('prompt')">Example Prompt</button>
             </div>
             <div class="preview-actions">
-              <button onclick="validateRegistry()" class="ghost-btn">Validate</button>
-              <button onclick="copyToClipboard()" class="ghost-btn">Copy</button>
+              <span id="validation-status" class="validation-status">Not validated yet</span>
+              <button id="preview-action-validate" onclick="validateRegistry()" class="ghost-btn">Validate</button>
+              <button id="preview-action-copy" onclick="copyToClipboard()" class="ghost-btn">Copy</button>
             </div>
           </div>
-          <pre id="output-json" class="output-json"></pre>
+
+          <div id="preview-json-panel">
+            <pre id="output-json" class="output-json"></pre>
+          </div>
+
+          <div id="preview-prompt-panel" hidden>
+            <div class="example-prompt-note">Example render — uses first item per section unless changed below. Template vars shown as-is.</div>
+            <div id="example-prompt-selections" class="example-prompt-selections"></div>
+            <pre id="example-prompt-output" class="output-json example-prompt-text"></pre>
+          </div>
         </section>
       </aside>
     </section>

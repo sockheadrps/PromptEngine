@@ -10,6 +10,7 @@
       "persona.base_directives",
       "sentiment.context",
       "sentiment.nudges",
+      "sentiment.scale",
       "injections",
       "examples.reply_samples",
       "prompt_endings.endings"
@@ -37,10 +38,7 @@
       "items": [
         {
           "name": "scene",
-          "text": "You are a support agent for {product}.",
-          "fragments": [
-            { "if_var": "plan", "text": "The customer is on the {plan} plan." }
-          ]
+          "text": "You are a support agent for {product}. The customer is on the {plan} plan."
         }
       ]
     },
@@ -71,10 +69,12 @@
     "sentiment": {
       "required": true,
       "template_vars": [],
+      "scale_template": "Urgency level: {value}/10 — treat this as {emotion} priority.",
       "items": [
         {
           "id": "calm",
           "context": "The customer seems calm and just needs information.",
+          "scale_emotion": "normal",
           "nudges": [
             "Keep tone neutral and factual.",
             "No need to over-reassure."
@@ -83,6 +83,7 @@
         {
           "id": "frustrated",
           "context": "The customer is clearly frustrated.",
+          "scale_emotion": "high",
           "nudges": [
             "Acknowledge the inconvenience early.",
             "Be concise — they don't want a wall of text."

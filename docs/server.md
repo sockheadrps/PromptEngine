@@ -38,10 +38,24 @@ JSON by hand. Navigate to `/builder` from the Studio header.
   Bot" example so you can see all fields in one place.
 - **Import JSON** — paste an existing registry to load it into the form.
 - Each section (Base Context, Personas, Sentiment, Static Injections,
-  Runtime Injections, Output Directions, Examples, Prompt Endings) has
-  an **Add** button. Fill in the fields; the JSON preview updates live.
-- **Assembly Order** tab — drag-and-drop the token sequence that
-  controls how sections are woven together.
+  Runtime Injections, Output Directions, Examples, Prompt Endings) starts
+  collapsed. Click a section header to expand it and use its **Add** button
+  to create items. Fill in the fields; the JSON preview updates live.
+- **Pool items** — most section item forms include an optional `items[]`
+  pool field. Filling it lets you reference the item as a named pool token
+  (e.g. `examples.my_pool`) without needing a separate pool section.
+- **Sentiment — Scale Settings** — a collapsible block inside the Sentiment
+  section exposes `scale_template` (the phrasing for the `sentiment.scale`
+  token) and a per-item `scale_emotion` override for each sentiment item.
+- **Finalizer** panel (right side) — two tabs:
+  - *Registry JSON* — live JSON output of the current registry.
+  - *Example Prompt* — renders a live text preview of the assembled prompt
+    as you build, using your current assembly order and a sample selection
+    from each section. Useful for sanity-checking the output shape without
+    opening the Studio.
+- **Assembly Order** — drag-and-drop the token sequence that controls how
+  sections are woven together. The Named Pools palette auto-refreshes as
+  you add or rename items.
 - **Generation / Policy** tab — set temperature, top_p, max_tokens,
   output policy rules, etc.
 - **Validate** — sends the current JSON to the server for a schema check.
@@ -63,12 +77,9 @@ The primary surface. For each section:
   every Pre-generate / Generate. Disabled for `base_context`.
 - **Sentiment slider** *(sentiment only)* — drives the
   `sentiment.scale` token. Has its own *Random at run time* checkbox.
-- **`+` button** — opens a collapsible, schema-strict form to add a new
-  item. Forms reflect each section's expected fields
-  (`{id, context, base_directives[]}` for personas,
-  `{name, items[]}` for pool sections, …).
 - **Inline editor** — pre-filled with the selected item's values; edits
-  write back through to the in-memory registry.
+  write back through to the in-memory registry. To add or remove items,
+  use the **Builder** (`/builder`).
 - **Template vars** — labeled inputs for each declared variable. The
   `+ var` button on each section adds a new `{var}` placeholder; the
   `×` next to a var removes it.
