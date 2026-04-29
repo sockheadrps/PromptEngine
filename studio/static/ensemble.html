@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>promptlibretto — ensemble</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/ensemble.css" />
+</head>
+<body>
+
+<header class="header">
+  <span class="header-brand">prompt<span>libretto</span></span>
+  <span class="header-sep">—</span>
+  <span class="header-page">ensemble</span>
+  <nav class="header-nav">
+    <a href="/" class="nav-link">Studio</a>
+    <a href="/builder" class="nav-link">Builder</a>
+  </nav>
+</header>
+
+<div class="layout">
+
+  <!-- config row -->
+  <div class="config-row">
+
+    <!-- participant A -->
+    <div class="config-panel" id="panel-a">
+      <div class="config-panel-header">
+        <div class="participant-dot a"></div>
+        <span class="config-panel-title">Participant A</span>
+      </div>
+      <div class="config-fields">
+        <div class="field-group">
+          <label>Name</label>
+          <input type="text" id="a-name" value="A" placeholder="A" />
+        </div>
+        <div class="field-group">
+          <label>Model</label>
+          <input type="text" id="a-model" value="llama3" placeholder="llama3" />
+        </div>
+        <div class="field-group full">
+          <label>Load from studio snapshot</label>
+          <div class="snapshot-row">
+            <select id="a-snapshot"><option value="">— select snapshot —</option></select>
+            <button class="btn-load-snap" onclick="loadSnapshot('a')">Load</button>
+          </div>
+        </div>
+        <div class="field-group full">
+          <label>Registry JSON</label>
+          <textarea id="a-registry" placeholder='{"registry": { ... }}'></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- participant B -->
+    <div class="config-panel" id="panel-b">
+      <div class="config-panel-header">
+        <div class="participant-dot b"></div>
+        <span class="config-panel-title">Participant B</span>
+      </div>
+      <div class="config-fields">
+        <div class="field-group">
+          <label>Name</label>
+          <input type="text" id="b-name" value="B" placeholder="B" />
+        </div>
+        <div class="field-group">
+          <label>Model</label>
+          <input type="text" id="b-model" value="llama3" placeholder="llama3" />
+        </div>
+        <div class="field-group full">
+          <label>Load from studio snapshot</label>
+          <div class="snapshot-row">
+            <select id="b-snapshot"><option value="">— select snapshot —</option></select>
+            <button class="btn-load-snap" onclick="loadSnapshot('b')">Load</button>
+          </div>
+        </div>
+        <div class="field-group full">
+          <label>Registry JSON</label>
+          <textarea id="b-registry" placeholder='{"registry": { ... }}'></textarea>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- controls row -->
+  <div class="controls-row">
+    <div class="ctrl-group">
+      <label>Turns</label>
+      <input type="text" id="turns" value="8" class="turns-input" />
+    </div>
+    <div class="ctrl-group seed">
+      <label>Seed message</label>
+      <input type="text" id="seed" placeholder="Opening message sent to participant A…" />
+    </div>
+    <button class="btn-run" id="btn-run" onclick="startEnsemble()">Run</button>
+    <button class="btn-stop" id="btn-stop" onclick="stopEnsemble()">Stop</button>
+    <div id="conn-chip" class="conn-chip" title="Connection from Studio settings"></div>
+    <span class="status-chip" id="status"></span>
+  </div>
+
+  <!-- conversation -->
+  <div class="conversation-area" id="conversation">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-state-icon">⇄</div>
+      <div>Configure two participants and hit Run</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/ensemble.js"></script>
+</body>
+</html>

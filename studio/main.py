@@ -14,9 +14,11 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .registry_routes import router as registry_router
+from .ensemble_routes import router as ensemble_router
 
 app = FastAPI(title="promptlibretto studio")
 app.include_router(registry_router)
+app.include_router(ensemble_router)
 
 
 _static_dir = Path(__file__).parent / "static"
@@ -34,6 +36,11 @@ def index() -> FileResponse:
 @app.get("/templatebuilder")  # legacy bookmark — redirect-equivalent
 def builder() -> FileResponse:
     return FileResponse(_static_dir / "templatebuilder.html")
+
+
+@app.get("/ensemble")
+def ensemble() -> FileResponse:
+    return FileResponse(_static_dir / "ensemble.html")
 
 
 @app.get("/health")

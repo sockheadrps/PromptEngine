@@ -1183,10 +1183,15 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   }
 
   function captureSnapshot(name) {
+    const reg = JSON.parse(JSON.stringify(registry));
+    const generation = readGenOverrides();
+    if (Object.keys(generation).length) {
+      reg.generation = { ...(reg.generation || {}), ...generation };
+    }
     const snap = {
       name,
       savedAt: new Date().toISOString(),
-      registry: JSON.parse(JSON.stringify(registry)),
+      registry: reg,
       selections: captureSelections(),
       arrayModes: JSON.parse(JSON.stringify(arrayModes)),
       sectionRandom: JSON.parse(JSON.stringify(sectionRandom)),
