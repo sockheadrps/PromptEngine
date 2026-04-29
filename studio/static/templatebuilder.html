@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>promptlibretto builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/templatebuilder.css" />
+</head>
+<body>
+  <header>
+    <div class="header-brand">
+      <h1>promptlibretto</h1>
+      <nav class="header-page-nav">
+        <a href="/" class="header-page-link">Studio</a>
+        <span class="header-page-link active">Builder</span>
+      </nav>
+    </div>
+    <div class="header-meta">
+      <button type="button" class="header-nav-btn" onclick="loadBuilderExample()">Load Example</button>
+      <button type="button" class="header-nav-btn" onclick="importModel()">Import JSON</button>
+      <button type="button" class="header-nav-btn" onclick="validateRegistry()">Validate</button>
+      <button type="button" class="header-nav-btn" onclick="copyToClipboard()" id="copy-btn">Copy JSON</button>
+      <button type="button" class="header-nav-btn header-nav-accent" onclick="exportFullModel()">Generate Registry</button>
+      <button type="button" class="header-nav-btn header-nav-accent" onclick="openInStudio()">Open in Studio</button>
+    </div>
+  </header>
+
+  <div id="modal-overlay" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h3 class="modal-title" id="modal-title">Section Variables</h3>
+      <p class="modal-subtitle">Enter variable name like <code>{user_name}</code></p>
+      <input type="text" id="modal-input" class="mb-4" placeholder="{var_name}" onkeyup="if(event.key==='Enter') saveModal()">
+      <div class="modal-actions">
+        <button onclick="closeModal()" class="ghost-btn">Cancel</button>
+        <button onclick="saveModal()" class="primary-btn compact">Add Variable</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="builder-shell">
+
+    <section class="builder-meta-grid">
+      <div class="panel field-card">
+        <label>Registry Version</label>
+        <input type="number" id="model-version" value="" oninput="exportFullModel()" />
+      </div>
+      <div class="panel field-card">
+        <label>Registry Title</label>
+        <input type="text" id="model-title-input" value="" oninput="exportFullModel()" />
+      </div>
+      <div class="panel field-card">
+        <label>Registry Description</label>
+        <input type="text" id="model-desc-input" value="" oninput="exportFullModel()" />
+      </div>
+    </section>
+
+    <section class="builder-main-grid">
+      <div class="builder-authoring">
+        <section class="panel builder-tab-panel">
+          <div class="builder-tabs" role="tablist" aria-label="Builder panels">
+            <button type="button" id="tab-sections" class="builder-tab active" onclick="switchBuilderTab('sections')" aria-selected="true">Sections</button>
+            <button type="button" id="tab-finalize" class="builder-tab" onclick="switchBuilderTab('finalize')" aria-selected="false">Finalize</button>
+          </div>
+        </section>
+
+        <section id="builder-tab-sections-panel" class="builder-tab-body active">
+          <section class="panel sections-panel">
+            <div class="panel-head">
+              <span class="panel-title">Sections</span>
+              <span class="panel-note">Author items, vars, and section metadata</span>
+            </div>
+            <div id="section-list" class="section-list"></div>
+          </section>
+        </section>
+
+        <section id="builder-tab-finalize-panel" class="builder-tab-body">
+          <section class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Prompt Flow</span>
+                <span class="panel-note">Compose the prompt as readable steps, then Builder exports the exact assembly tokens</span>
+              </div>
+            </div>
+            <input id="assembly-order-input" type="hidden" />
+            <div class="assembly-flow-layout">
+              <div class="assembly-current">
+                <div class="assembly-subhead">Current Flow</div>
+                <div id="assembly-order-list" class="assembly-flow-list"></div>
+              </div>
+              <div class="assembly-sidebar">
+                <div class="assembly-adders panel inset-panel">
+                  <div class="assembly-subhead">Add Step</div>
+                  <label>
+                    <span>Step Type</span>
+                    <select id="assembly-step-select" onchange="handleAssemblyStepSelection()"></select>
+                  </label>
+                  <label id="assembly-variant-wrap" class="assembly-variant-wrap">
+                    <span>Variant</span>
+                    <select id="assembly-variant-select"></select>
+                  </label>
+                  <div id="assembly-selection-help" class="assembly-selection-help"></div>
+                  <button type="button" class="primary-btn compact" onclick="addSelectedAssemblyStep()">Add Step</button>
+                </div>
+                <div class="assembly-adders panel inset-panel">
+                  <div class="assembly-subhead">Advanced Tokens</div>
+                  <div class="assembly-token-groups">
+                    <div id="assembly-token-groups"></div>
+                  </div>
+                  <div class="assembly-custom-row">
+                    <input id="assembly-custom-token" type="text" placeholder="Custom token, e.g. examples[sentiment.example_pool]" />
+                    <button type="button" class="ghost-btn" onclick="addCustomAssemblyToken()">Add Token</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="builder-advanced-row">
+            <div class="panel field-panel collapsible-panel collapsed" data-builder-collapse>
+              <div class="panel-head">
+                <div>
+                  <span class="panel-title">Generation Overrides</span>
+                  <span class="panel-note">Optional top-level `generation`</span>
+                </div>
+                <button type="button" class="collapse-toggle" onclick="toggleBuilderCollapse(this)">Expand</button>
+              </div>
+              <div class="collapsible-body">
+                <div class="form-grid">
+                  <label><span>temperature</span><input id="gen-temperature" type="number" step="0.05" min="0" max="2" oninput="exportFullModel()" /></label>
+                  <label><span>top_p</span><input id="gen-top-p" type="number" step="0.05" min="0" max="1" oninput="exportFullModel()" /></label>
+                  <label><span>top_k</span><input id="gen-top-k" type="number" step="1" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_tokens</span><input id="gen-max-tokens" type="number" step="1" min="1" oninput="exportFullModel()" /></label>
+                  <label><span>repeat_penalty</span><input id="gen-repeat-penalty" type="number" step="0.05" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>retries</span><input id="gen-retries" type="number" step="1" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_prompt_chars</span><input id="gen-max-prompt-chars" type="number" step="100" min="0" oninput="exportFullModel()" /></label>
+                </div>
+              </div>
+            </div>
+            <div class="panel field-panel collapsible-panel collapsed" data-builder-collapse>
+              <div class="panel-head">
+                <div>
+                  <span class="panel-title">Output Policy</span>
+                  <span class="panel-note">Optional top-level `output_policy`</span>
+                </div>
+                <button type="button" class="collapse-toggle" onclick="toggleBuilderCollapse(this)">Expand</button>
+              </div>
+              <div class="collapsible-body">
+                <div class="form-grid">
+                  <label><span>min_length</span><input id="policy-min-length" type="number" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_length</span><input id="policy-max-length" type="number" min="0" oninput="exportFullModel()" /></label>
+                  <label class="check-row"><span>collapse_whitespace</span><input id="policy-collapse-whitespace" type="checkbox" onchange="exportFullModel()" /></label>
+                  <label><span>append_suffix</span><input id="policy-append-suffix" type="text" oninput="exportFullModel()" /></label>
+                </div>
+                <div class="stack-fields">
+                  <label><span>strip_prefixes</span><textarea id="policy-strip-prefixes" rows="2" oninput="exportFullModel()" placeholder="One per line"></textarea></label>
+                  <label><span>strip_patterns</span><textarea id="policy-strip-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                  <label><span>required_patterns</span><textarea id="policy-required-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                  <label><span>forbidden_substrings</span><textarea id="policy-forbidden-substrings" rows="2" oninput="exportFullModel()" placeholder="One per line"></textarea></label>
+                  <label><span>forbidden_patterns</span><textarea id="policy-forbidden-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                </div>
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
+
+      <aside class="builder-preview">
+        <section class="panel output-panel">
+          <div class="panel-head">
+            <div>
+              <span class="panel-title">Registry JSON Output</span>
+              <div id="validation-status" class="validation-status">Not validated yet</div>
+            </div>
+            <div class="preview-actions">
+              <button onclick="validateRegistry()" class="ghost-btn">Validate</button>
+              <button onclick="copyToClipboard()" class="ghost-btn">Copy</button>
+            </div>
+          </div>
+          <pre id="output-json" class="output-json"></pre>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script defer src="/static/templatebuilder.js"></script>
+</body>
+</html>

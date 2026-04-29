@@ -141,25 +141,25 @@ retries up to `generation.retries` times when validation fails.
 
 ### Merge semantics
 
-Policy and config merge in the same way: route layers on top of
-registry. The asymmetry lives in `OutputPolicy.merged_with`:
+Generation config route overrides replace registry-level values
+key-by-key. Output policy has two layers of behavior: the
+`OutputPolicy.merged_with` helper is additive for sequence fields, but
+`Engine.run()` currently applies route policy with a dictionary update
+before constructing the policy object.
 
 - **Sequence fields** (`strip_prefixes`, `strip_patterns`,
   `forbidden_substrings`, `forbidden_patterns`, `require_patterns`) are
-  **additive** — the route's rules extend the registry's, they don't
-  replace them. So a registry-level `forbidden_substrings: ['"']` plus a
-  route-level `forbidden_substrings: ['username:']` together forbid
-  both.
+  **additive** when passed through `OutputPolicy.merged_with` directly.
+  In `Engine.run()` route policy replaces the registry value for the
+  same field, because the route dictionary is applied first.
 - **Scalar fields** (`max_length`, `min_length`, `append_suffix`,
-  `collapse_whitespace`) **replace**. Set them on a route to tighten or
-  loosen base behavior.
+  `collapse_whitespace`) **replace**.
 
 `GenerationConfig.merged_with` is straight key-by-key replace; setting
 `temperature` on a route just overrides it.
 
-This way a registry can declare cross-cutting "always strip these
-prefixes" rules once, and a route can pile on its own without needing
-to recopy them.
+If you need registry-level sequence rules and route-level sequence rules
+to both apply under `Engine.run()`, include both sets on the route.
 
 ## Optional routes
 

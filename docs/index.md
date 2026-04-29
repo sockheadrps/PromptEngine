@@ -65,16 +65,22 @@ promptlibretto-studio --port 8000
 
 Open <http://localhost:8000>. From there:
 
-1. **Import JSON…** to paste a registry, or use the schema skeleton in
-   the repo as a starting point.
+1. **Import JSON…** to paste a registry, or load one of the bundled
+   examples as a starting point.
 2. Pick selections (dropdowns / checkboxes), set per-array runtime modes
    (`all` / `none` / `index:N` / `random:K`), fill template-var inputs,
    and use the sentiment-intensity slider.
 3. **Pre-generate** to render the prompt; **Generate** to send it
-   browser-direct to your local Ollama.
+   browser-direct to your local Ollama. The browser-direct path uses the
+   server to hydrate the prompt, but it does not apply Python-side output
+   policy validation or retries.
 4. **Export Model JSON** copies the canonical registry — selections,
    runtime modes, slider, generation overrides, all baked in — to
    load in your app via `load_registry()`.
+
+![Studio Compose view](assets/screenshots/studio-compose.png)
+
+![Builder overview](assets/screenshots/builder-overview.png)
 
 ## State shape
 
@@ -142,7 +148,8 @@ Everything lives at the top of the package: `from promptlibretto import …`.
 : One section. `required: bool`, `template_vars: list[str]`,
   `items: list[dict]`. May also carry studio-state extras
   (`selected`, `section_random`, `array_modes`, `slider`,
-  `slider_random`) when round-tripping through `Export Model JSON`.
+  `slider_random`, `scale_template`, `template_var_defaults`)
+  when round-tripping through `Export Model JSON`.
 
 `Route`
 : Optional override bundle. `assembly_order: list[str] | None`,
@@ -227,6 +234,8 @@ GenerationConfig(
 `Engine` builds one of these per call from `registry.generation` merged
 with the active route's `generation`. You don't usually instantiate it
 directly — set fields on the registry/route JSON instead.
+`max_prompt_chars` is stored in the config object but is not enforced by
+the current engine.
 
 ### Output policy
 
@@ -255,8 +264,10 @@ Merge semantics on `OutputPolicy.merged_with(overrides)`:
 - Scalars (`max_length`, `min_length`, `append_suffix`,
   `collapse_whitespace`) — **replace**.
 
-This is why route-level policy plays nicely with registry-level
-defaults: you don't have to redeclare base rules per route.
+`Engine.run()` currently applies route output policy with a dictionary
+update before constructing `OutputPolicy`. In practice, a route-level
+sequence field replaces the registry-level value for that field rather
+than extending it.
 
 ### Providers
 
@@ -272,12 +283,13 @@ defaults: you don't have to redeclare base rules per route.
 `supports_streaming(provider) -> bool`
 : True iff `provider.stream` is callable.
 
-`OllamaProvider(base_url, chat_path, payload_shape="auto")`
+`OllamaProvider(base_url, chat_path, payload_shape="auto", client=None)`
 : Talks to Ollama or any OpenAI-compatible chat endpoint. `payload_shape`
   defaults to auto-detect from `chat_path` (presence of `/v1/` ⇒
-  `openai`).
+  `openai`). Pass a custom `httpx.AsyncClient` to `client` to set
+  timeouts or other transport options.
 
-`MockProvider(responder=None, latency_ms=10.0)`
+`MockProvider(responder=None, latency_ms=5.0)`
 : Echoes the user prompt back, optionally transformed by `responder`.
   Used in tests and demos.
 
@@ -300,5 +312,6 @@ defaults: you don't have to redeclare base rules per route.
 
 - [Design rationale](design.md) — how the registry model fits together
   and why it replaced routes/overlays/injections/presets.
-- [Studio](server.md) — designing prompts in the browser, exporting
-  models, browser-direct LLM, and the registry HTTP API.
+- [Studio & Builder](server.md) — designing prompts in the browser,
+  the visual registry builder, exporting models, browser-direct LLM,
+  and the registry HTTP API.

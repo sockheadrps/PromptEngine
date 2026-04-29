@@ -30,6 +30,12 @@ def index() -> FileResponse:
     return FileResponse(_static_dir / "indexv2.html")
 
 
+@app.get("/builder")
+@app.get("/templatebuilder")  # legacy bookmark — redirect-equivalent
+def builder() -> FileResponse:
+    return FileResponse(_static_dir / "templatebuilder.html")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

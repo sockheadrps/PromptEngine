@@ -1,97 +1,124 @@
 # promptlibretto studio
 
-Browser-based prompt designer for the `promptlibretto` library. Tune
-your routes, base context, overlays, and injections against a live
-model, then **Export as JSON** to drop the exact configuration into
-your app.
+Browser-based prompt designer for the `promptlibretto` library. Load a
+registry, tune selections and runtime modes against a live local model,
+and export the final JSON to drop into your app.
 
-![Studio overview](../docs/assets/screenshots/generatedoutput.png)
-
-Click **About** in the header for a built-in guided tour that walks
-through how base context, route, overlays, and injections compose into
-the final prompt.
-
-Full walkthrough with screenshots:
-**[sockheadrps.github.io/promptlibretto/server](https://sockheadrps.github.io/promptlibretto/server/)**
+Full docs: **[sockheadrps.github.io/promptlibretto/server](https://sockheadrps.github.io/promptlibretto/server/)**
 
 ## Run it
 
 ```bash
-pip install "promptlibretto[studio]"
-promptlibretto-studio                         # defaults to Ollama at localhost:8080
-PROMPT_ENGINE_MOCK=1 promptlibretto-studio    # no model required; echoes prompts
+pip install "promptlibretto[studio,ollama]"
+promptlibretto-studio --port 8000
 ```
 
-Env vars: `HOST`, `PORT`, `OLLAMA_URL`, `OLLAMA_MODEL`,
-`PROMPT_ENGINE_MOCK`, `PROMPTLIBRETTO_DATA_DIR`
-(defaults to `~/.promptlibretto/studio` — scenarios and base-context
-library), `PROMPTLIBRETTO_EXPORT_DIR`
-(defaults to `./promptlibretto_exports/` — saved `.json` exports, kept
-in CWD so they sit next to your project).
+Open <http://localhost:8000>.
 
-## What you do with it
+## Pages
 
-1. Pick a route, fill in a user input, toggle injections and overrides.
-2. Generate — inspect the system/user prompts, attempts, and resolved
-   config in the debug trace.
-3. Iterate. Follow-ups become overlays; overlays persist across runs.
-4. **Edit prompt** (next to the route selector) overrides the resolved
-   system/user text for the next run(s) without touching the route —
-   sticks until cleared.
-5. **Export as JSON → Save to disk** under a name. Load it back in your
-   app with `promptlibretto.load_engine("name.json")`, which returns
-   `(engine, run)`.
+### Studio (`/`)
 
-Runtime slots: each overlay card has a **runtime** dropdown — *fixed*
-bakes the text into the export; *optional* and *required* turn it into
-a keyword arg on the loader's `run()` closure. Runtime overlay text
-can use `{}` as a placeholder that the caller's value is substituted
-into (e.g. template `"Your mood is: {}. Respond with that influence."`
-with kwarg `mood="hype"` renders the value inline).
+The main tuning surface. Load a registry via **Import JSON…** (paste
+JSON) or receive one from the Builder. Each registry section renders
+as a card with:
 
-**Ensemble** (header nav → *Ensemble*) fans a single **Shared Directive**
-out across multiple saved exports in parallel and shows their outputs
-side-by-side. Optional **Context Overrides** layer extra context on top
-of each selected export's baked-in state for that one run.
+- A selection control (dropdown for required sections, checkboxes for
+  optional ones).
+- A **Random at run time** toggle — re-rolls the selection on every
+  Pre-generate / Generate.
+- An **inline editor** pre-filled with the selected item's fields —
+  edits write back to the in-memory registry.
+- **Template var** inputs for each declared `{variable}`.
 
-![Ensemble](../docs/assets/screenshots/ensamble-example.png)
+Sections split across two tabs:
 
-**Pre-Generate** resolves the current prompt into draggable per-section
-cards — reorder, fill in runtime-slot test values, and review the fully
-assembled system/user prompts before hitting Generate.
+- **Compose** — Base Context, Personas, Sentiment (with its intensity
+  slider), Static / Runtime Injections.
+- **Tuning** — Generation Overrides (temperature, top_p, top_k,
+  max_tokens, repeat_penalty, retries, max_prompt_chars), Examples,
+  Prompt Endings. Browser-direct generation uses the sampling fields;
+  `retries` is used by `Engine.run()` and `/api/registry/generate`.
+  `max_prompt_chars` is currently stored/exported but not enforced by
+  the engine.
 
-![Pre-Generate](../docs/assets/screenshots/pregenerate.png)
+![Studio Compose view](../docs/assets/screenshots/studio-compose.png)
 
-## Wiring
+![Studio Tuning view](../docs/assets/screenshots/studio-tuning.png)
 
-```
-browser (static/app.js)
-   │  fetch()
-   ▼
-FastAPI (main.py)
-   │  engine calls
-   ▼
-PromptEngine (library)
-```
+Hit **Pre-generate** to see the assembled prompt, then **Generate** to
+send it browser-direct to your local Ollama. Browser-direct generation
+uses the server for hydration but does not apply Python-side output
+policy validation or retries. The stream toggle streams tokens as they
+arrive. **Export Model JSON** copies the full
+registry — selections, modes, sliders, and generation overrides baked
+in — ready for `load_registry()` in your app.
 
-One engine is built in `lifespan()` and attached to `app.state`.
-Handlers pull it via `_engine()` and call engine methods — they don't
-build prompts themselves. The server holds a couple of extra stores
-(base library, scenarios, saved exports, latency middleware) for app
-concerns the library shouldn't know about.
+![Pre-generate review](../docs/assets/screenshots/studio-pregenerate.png)
+
+![Generated output](../docs/assets/screenshots/studio-output.png)
+
+### Builder (`/builder`)
+
+Visual form for constructing a new registry from scratch.
+
+- **Load Example** — fills every section with a complete example.
+- **Import JSON** — load an existing registry into the form.
+- Sections, Assembly Order, and Generation / Policy tabs mirror the
+  registry schema.
+- **Validate** — schema-checks the current JSON against the server.
+- **Generate Registry** — copies / downloads the finished JSON.
+- **Open in Studio** — sends the registry to the Studio tab via
+  `localStorage`.
+
+![Builder overview](../docs/assets/screenshots/builder-overview.png)
+
+## Connection
+
+The studio calls your local LLM directly from the browser after using
+the backend to hydrate the prompt. Click the connection chip in the
+header to set the base URL, chat path, payload shape (Ollama /
+OpenAI-compatible), and model. Settings persist in `localStorage`.
+
+![Connection settings](../docs/assets/screenshots/connection-modal.png)
+
+## Snapshots
+
+**Snapshots** (header button) saves / restores full panel state:
+registry, selections, modes, sliders, template vars, generation
+overrides. Storage is `localStorage`; snapshots persist across
+reloads but stay on the device.
+
+![Snapshots modal](../docs/assets/screenshots/snapshots-modal.png)
+
+## Registry HTTP API
+
+The studio also exposes these endpoints for headless use:
+
+| Endpoint                      | Purpose                                   |
+| ----------------------------- | ----------------------------------------- |
+| `POST /api/registry/load`     | Parse and canonicalize a registry JSON.   |
+| `POST /api/registry/hydrate`  | Assemble the prompt for a registry + state. |
+| `POST /api/registry/generate` | Hydrate + LLM + Python output policy.     |
+| `GET  /health`                | Liveness check.                           |
+
+Server-side generation uses `OllamaProvider`. Set
+`PROMPT_ENGINE_MOCK=1` to use `MockProvider`, or `OLLAMA_URL` /
+`OLLAMA_CHAT_PATH` to point at a different host.
 
 ## Files
 
-- [`main.py`](main.py) — FastAPI app, lifespan, endpoints.
-- [`presets.py`](presets.py) — example routes, named assets, pools, injectors.
-- [`middleware.py`](middleware.py) — `LatencyLogger`.
-- [`base_library.py`](base_library.py) — named base-context store.
-- [`snapshot_library.py`](snapshot_library.py) — full-state snapshots (scenarios).
-- [`export_library.py`](export_library.py) — named `.json` export store.
-- [`custom_route_library.py`](custom_route_library.py) — user-defined `RouteSpec`s.
-- [`static/`](static/) — single-page UI (`index.html`, `app.js`, `style.css`).
-
-Swap `presets.py` for your own and keep the rest — the router and asset
-registry are built imperatively there (`reg.add(...)`,
-`reg.add_injector(...)`, `PromptRoute(builder=CompositeBuilder(...))`),
-which is as expressive as Python.
+- [`main.py`](main.py) — FastAPI app, lifespan, API endpoints.
+- [`static/indexv2.html`](static/indexv2.html) — Studio page.
+- [`static/appv2.js`](static/appv2.js) — Studio logic.
+- [`static/stylev2.css`](static/stylev2.css) — Studio styles.
+- [`static/templatebuilder.html`](static/templatebuilder.html) — Builder page.
+- [`static/templatebuilder.js`](static/templatebuilder.js) — Builder logic.
+- [`static/templatebuilder.css`](static/templatebuilder.css) — Builder styles.
+- [`static/connection.js`](static/connection.js) — Connection modal + chip.
+- [`static/ollama_client.js`](static/ollama_client.js) — Browser-side Ollama / OpenAI-compat client.
+- [`static/session.js`](static/session.js) — Workspace chip.
+- [`static/examples/`](static/examples/) — Studio example registries.
+- [`static/builder-examples/`](static/builder-examples/) — Builder example registries.
+- Snapshots are stored in browser `localStorage` under
+  `pl-registry-snapshots-v1`.

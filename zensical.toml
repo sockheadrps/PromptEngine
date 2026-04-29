@@ -7,7 +7,7 @@ repo_url = "https://github.com/sockheadrps/promptlibretto"
 nav = [
   { "Home" = "index.md" },
   { "Design rationale" = "design.md" },
-  { "Studio" = "server.md" },
+  { "Studio & Builder" = "server.md" },
 ]
 
 copyright = "Licensed under the MIT License."

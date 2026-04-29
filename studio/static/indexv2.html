@@ -6,7 +6,7 @@
   <title>promptlibretto studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/stylev2.css" />
 </head>
 <body>
@@ -16,6 +16,7 @@
       <nav class="header-page-nav">
         <span class="header-page-link active">Studio</span>
       </nav>
+      <a href="/builder" class="header-nav-btn">Builder</a>
       <button id="snapshots-btn" type="button" class="header-nav-btn">Snapshots</button>
       <span id="snapshot-indicator" class="snapshot-indicator" hidden>
         <span id="snapshot-name" class="snapshot-name"></span>
@@ -27,9 +28,7 @@
       <button id="about-btn" type="button" class="header-nav-btn">About</button>
       <button id="example-btn" type="button" class="header-nav-btn header-nav-accent">View Examples</button>
       <span class="header-nav-sep"></span>
-      <span id="meta-provider" class="meta-chip">provider: …</span>
-      <span id="meta-model" class="meta-chip">model: …</span>
-      <span id="meta-url" class="meta-chip">url: …</span>
+      <div id="connection-slot"></div>
     </div>
   </header>
 
@@ -54,6 +53,7 @@
             <button class="help" type="button" data-help="registry">?</button>
           </legend>
           <div class="registry-actions">
+            <button id="open-builder-btn" type="button" class="ghost-action small">Open Builder</button>
             <button id="registry-import-btn" type="button" class="ghost-action small">Import JSON…</button>
             <button id="registry-export-btn" type="button" class="ghost-action small" disabled>Export Model JSON</button>
             <span id="registry-meta" class="muted registry-meta">No registry loaded</span>
@@ -447,87 +447,91 @@
         </header>
         <div class="modal-body about-slideshow">
           <div class="slide-diagram">
-            <span class="sd-box sd-base" data-step="1">Base Context</span>
-            <span class="sd-plus" data-step="1">+</span>
-            <span class="sd-box sd-route" data-step="1">Route</span>
+            <span class="sd-box sd-base" data-step="1">Sections</span>
             <span class="sd-plus" data-step="2">+</span>
-            <span class="sd-box sd-overlay" data-step="2">Overlays</span>
+            <span class="sd-box sd-route" data-step="2">Selections</span>
             <span class="sd-plus" data-step="3">+</span>
-            <span class="sd-box sd-inj" data-step="3">Injections</span>
+            <span class="sd-box sd-overlay" data-step="3">Runtime Modes</span>
             <span class="sd-arrow" data-step="4">→</span>
             <span class="sd-box sd-out" data-step="4">Final Prompt</span>
             <span class="sd-sep" data-step="5"></span>
             <span class="sd-box sd-secondary" data-step="5">Pre-Generate</span>
             <span class="sd-box sd-secondary" data-step="5">Export</span>
-            <span class="sd-box sd-secondary" data-step="6">Ensemble</span>
+            <span class="sd-box sd-secondary" data-step="6">Builder</span>
           </div>
-  
+
           <div class="about-columns">
             <!-- Left: slide text -->
             <div class="about-content">
               <div class="about-slide active" data-slide="0">
                 <h4>The Big Picture</h4>
-                <p>promptlibretto assembles prompts from composable pieces — like a musical score built from parts.</p>
-                <p>Instead of one monolithic prompt string, you define <strong>routes</strong>, <strong>context layers</strong>, and <strong>injections</strong> that snap together at generation time.</p>
-                <p>Once you've tuned and tested a configuration in the studio, <strong>export</strong> it as JSON. In your project, a single call loads the full prompt pipeline — context, route, injections, sampling, and output policy — ready to run:</p>
-                <pre class="about-code">from promptlibretto import load_engine
-  
-  eng = load_engine("analyst_v2.json")
-  result = eng.run(input="How do I get my first 10 paying users?")</pre>
-                <p>Step through to see each piece add to the prompt on the right →</p>
+                <p>promptlibretto assembles prompts from composable pieces. Instead of one monolithic string, you define named <strong>sections</strong> — personas, sentiment, examples, injections — and an <strong>assembly_order</strong> that weaves them together.</p>
+                <p>Tune and test in the studio, then <strong>Export Model JSON</strong>. In your app, one call loads the whole thing:</p>
+                <pre class="about-code">from promptlibretto import load_registry
+
+eng = load_registry("support_bot.json")
+result = await eng.run(state={
+    "selections": {"personas": "empathetic"},
+})</pre>
+                <p>Step through to see each layer build the prompt on the right →</p>
               </div>
-  
+
               <div class="about-slide" data-slide="1">
-                <h4>Base Context &amp; Route</h4>
-                <p><strong>Base Context</strong> is your long-lived framing — persona, constraints, stable facts. It appears in every prompt.</p>
-                <p>A <strong>route</strong> is a named strategy for one kind of prompt. It bundles a composition recipe, sampling defaults, and an output policy. A route can define a <strong>runtime schema</strong> to create structured inputs.</p>
+                <h4>Registry &amp; Sections</h4>
+                <p>A <strong>registry</strong> is a JSON object containing named sections. Each section holds a list of <strong>items</strong>. The <code>assembly_order</code> is a list of dot-notation tokens — like <code>persona.context</code> or <code>sentiment.nudges</code> — that control what goes into the prompt and in what order.</p>
+                <p>Built-in section types: <code>base_context</code>, <code>personas</code>, <code>sentiment</code>, <code>static_injections</code>, <code>runtime_injections</code>, <code>output_prompt_directions</code>, <code>examples</code>, <code>prompt_endings</code>.</p>
               </div>
-  
+
               <div class="about-slide" data-slide="2">
-                <h4>Overlays</h4>
-                <p><strong>Overlays</strong> are temporary layers stacked on top of the base context — transient facts, signals, or emphasis. Each has a name and priority (higher = appears first). Some are fixed, others are filled at runtime via templates.</p>
+                <h4>Selections</h4>
+                <p>At run time you <strong>select</strong> which item from each section to use. Required sections default to the first item; optional ones are skipped unless explicitly selected.</p>
+                <p>The <strong>Random</strong> toggle re-rolls the selection on every generate — useful for personas or sentiment that should vary across runs.</p>
               </div>
-  
+
               <div class="about-slide" data-slide="3">
-                <h4>Injections</h4>
-                <p><strong>Injections</strong> are reusable fragments that <em>modify</em> the active route — adding instruction text, few-shot examples, and overriding sampling or output policy. Use them to represent conditional logic or stylistic variants.</p>
+                <h4>Runtime Modes &amp; Template Vars</h4>
+                <p>List fields inside an item (nudges, examples, directives) have per-array <strong>runtime modes</strong>: <code>all</code>, <code>none</code>, <code>index:N</code>, or <code>random:K</code>. Use <code>random:1</code> to pick a single nudge each run.</p>
+                <p><strong>Template vars</strong> fill <code>{placeholders}</code> in section text. <strong>Conditional fragments</strong> on <code>base_context</code> items only render when their variable has a value — so an unfilled <code>{sublocation}</code> never leaves a broken sentence.</p>
               </div>
-  
+
               <div class="about-slide" data-slide="4">
-                <h4>Generation &amp; Output</h4>
-                <p>When you hit <strong>Generate</strong>, the engine assembles all the active layers, sends the final prompt to the model, and validates the response. Enable <strong>Debug Trace</strong> to inspect the exact prompts and attempts.</p>
+                <h4>Generation &amp; Output Policy</h4>
+                <p>Each registry carries a <strong>generation</strong> block (temperature, top_p, max_tokens, retries, …) and an optional <strong>output_policy</strong> (length caps, forbidden substrings, required patterns, prefix stripping).</p>
+                <p>When you hit <strong>Generate</strong>, the engine assembles the prompt, calls your local model browser-direct, then validates the response against the policy. If validation fails and <code>retries &gt; 0</code> it tries again. The <strong>Debug Trace</strong> panel shows the exact prompt, response, and resolved config for every attempt.</p>
               </div>
-  
+
               <div class="about-slide" data-slide="5">
                 <h4>Pre-Generate &amp; Export</h4>
-                <p><strong>Pre-Generate</strong> previews assembled sections before sending. <strong>Export</strong> saves the entire configuration as JSON, loadable with <code>promptlibretto.load_engine()</code>. Runtime overlays and schema fields become function arguments.</p>
+                <p><strong>Pre-Generate</strong> resolves and displays the assembled prompt before any LLM call — inspect it, then hit Generate.</p>
+                <p><strong>Export Model JSON</strong> copies the full registry with your current selections, modes, sliders, and generation overrides baked in. Load it back in your app:</p>
+                <pre class="about-code">eng = load_registry("support_bot.json")
+result = await eng.run(state=...)</pre>
               </div>
-  
+
               <div class="about-slide" data-slide="6">
-                <h4>Ensemble</h4>
-                <p>The <strong>Ensemble</strong> page fans out the same input across multiple saved exports, each running independently with its own route, context, and config. Compare results side-by-side to find the best model for the job.</p>
+                <h4>Builder</h4>
+                <p>The <strong>Builder</strong> page (<a href="/builder" style="color:inherit">/builder</a>) is a visual form for constructing a registry from scratch — no JSON editing required.</p>
+                <p>Add sections, fill in items, drag-and-drop the assembly order, set generation and output policy, then hit <strong>Open in Studio</strong> to start tuning immediately.</p>
               </div>
             </div>
-  
+
             <!-- Right: progressive prompt preview -->
             <div class="tour-prompt">
               <div class="tour-prompt-title">Prompt Preview</div>
               <div class="tour-prompt-scroll">
-                <div class="tour-block-divider" data-show-at="1">── system prompt ──</div>
-                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-route">route · system frame</div><div class="tour-block-text">You are a precise analyst. Prefer structure, evidence, and named tradeoffs.</div></div>
-                <div class="tour-block-divider" data-show-at="1">── user prompt ──</div>
-                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-base">base context</div><div class="tour-block-text">You are a thinking partner for a solo founder. Generate a range of concrete options, not pep talks.</div></div>
-                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-overlay">overlay · constraints</div><div class="tour-block-text">Monthly burn must stay under $300. Founder is solo and cannot hire or delegate.</div></div>
-                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-overlay">overlay · industry <span class="tour-runtime-tag">runtime</span></div><div class="tour-block-text"><span class="tour-template-hint">template: The user's industry is {}</span>→ The user's industry is SaaS</div></div>
-                <div class="tour-block" data-show-at="3"><div class="tour-block-label sd-inj">injection · tighten</div><div class="tour-block-text">Compress aggressively. Aim for the shortest answer that is still complete.</div></div>
-                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-route">route · user input</div><div class="tour-block-text">How do I get my first 10 paying users?</div></div>
-                <div class="tour-block-divider" data-show-at="4">── output ──</div>
-                <div class="tour-block tour-block--output" data-show-at="4"><div class="tour-block-label sd-out">model response</div><div class="tour-block-text">**Acquire** 5 users by manually onboarding high-value targets. **Convert** via immediate payment after setup.</div></div>
+                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-base">output_prompt_directions</div><div class="tour-block-text">Reply in plain prose. Keep it under 100 words.</div></div>
+                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-base">base_context</div><div class="tour-block-text">You are a support agent for Acme Cloud. The customer is on the Pro plan.</div></div>
+                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-route">persona.context</div><div class="tour-block-text">You acknowledge frustration before solving.</div></div>
+                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-route">persona.base_directives</div><div class="tour-block-text">Open with a brief empathy line. Then give the solution clearly. Close by offering to follow up.</div></div>
+                <div class="tour-block" data-show-at="3"><div class="tour-block-label sd-overlay">sentiment.context</div><div class="tour-block-text">The customer is clearly frustrated.</div></div>
+                <div class="tour-block" data-show-at="3"><div class="tour-block-label sd-overlay">sentiment.nudges <span class="tour-runtime-tag">random:1</span></div><div class="tour-block-text">Be concise — they don't want a wall of text.</div></div>
+                <div class="tour-block-divider" data-show-at="4">── prompt ending ──</div>
+                <div class="tour-block tour-block--output" data-show-at="4"><div class="tour-block-label sd-out">model response</div><div class="tour-block-text">I'm sorry you're running into this. Go to Settings › Account › Reset — takes about 30 seconds. Reply here if it doesn't resolve it and I'll dig further.</div></div>
                 <div class="tour-prompt-empty" data-hide-at="1">Step through the slides to watch the prompt build up layer by layer.</div>
               </div>
             </div>
           </div>
-  
+
           <div class="about-nav">
             <button id="about-prev" type="button" class="ghost" disabled>← Prev</button>
             <div class="about-dots"></div>

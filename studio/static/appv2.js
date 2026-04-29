@@ -7,9 +7,11 @@
 
 import { mountWorkspaceChip } from "/static/session.js";
 import { mountConnectionChip, getConnection } from "/static/connection.js";
-import { generate as ollamaGenerate } from "/static/ollama_client.js";
+import { generate as ollamaGenerate, streamGenerate } from "/static/ollama_client.js";
 
 const $ = (id) => document.getElementById(id);
+const STUDIO_INBOX_KEY = "pl-studio-handoff-v1";
+const BUILDER_INBOX_KEY = "pl-builder-handoff-v1";
 
 // Mount header chips (workspace + connection indicator).
 mountWorkspaceChip($("connection-slot"));
@@ -19,6 +21,57 @@ function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
+}
+
+function renderInlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function renderMarkdown(text) {
+  const source = String(text == null ? "" : text).replace(/\r\n/g, "\n");
+  if (!source.trim()) return "";
+  const blocks = source.split(/\n{2,}/);
+  const html = [];
+
+  for (const block of blocks) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+
+    const fence = trimmed.match(/^```(\w+)?\n([\s\S]*?)\n?```$/);
+    if (fence) {
+      html.push(`<pre class="md-code"><code>${escapeHtml(fence[2])}</code></pre>`);
+      continue;
+    }
+
+    const lines = trimmed.split("\n");
+    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+      html.push(
+        `<ul>${lines.map((line) => `<li>${renderInlineMarkdown(line.trim().replace(/^[-*]\s+/, ""))}</li>`).join("")}</ul>`
+      );
+      continue;
+    }
+    if (lines.every((line) => /^\d+[.)]\s+/.test(line.trim()))) {
+      html.push(
+        `<ol>${lines.map((line) => `<li>${renderInlineMarkdown(line.trim().replace(/^\d+[.)]\s+/, ""))}</li>`).join("")}</ol>`
+      );
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      html.push(`<h${level}>${renderInlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+
+    html.push(`<p>${lines.map(renderInlineMarkdown).join("<br>")}</p>`);
+  }
+
+  return html.join("");
 }
 
 // ─── Tab switching (compose / state / tuning) ──────────────────
@@ -77,7 +130,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
 // ─── Registry import (Compose tab) ─────────────────────────────
 //
 // Imports a registry JSON of the shape produced by templatebuilder.html:
-//   { "registry": { version, title, description, assembly_order, <section>: { required, template_vars, items } } }
+//   { "registry": { version, title, description, assembly_order, <section>: { required, template_vars, items, ...tool_state } }, generation?, output_policy? }
 //
 // Renders a select (required, single-choice) or checkboxes (optional, multi)
 // for each section that has items, plus text inputs for each section's
@@ -86,6 +139,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
 // engine's existing route/base flow.
 (() => {
   const importBtn = $("registry-import-btn");
+  let exportBtn = null;
   const metaEl = $("registry-meta");
   const controlsEl = $("registry-controls");
   const tuningControlsEl = $("registry-controls-tuning");
@@ -1056,6 +1110,19 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     refreshSectionPreviews();
   }
 
+  function consumeBuilderHandoff() {
+    try {
+      const raw = localStorage.getItem(STUDIO_INBOX_KEY);
+      if (!raw) return false;
+      localStorage.removeItem(STUDIO_INBOX_KEY);
+      loadRegistryDict(JSON.parse(raw));
+      return true;
+    } catch (e) {
+      console.warn("Failed to load builder handoff:", e);
+      return false;
+    }
+  }
+
   importBtn.addEventListener("click", () => {
     const raw = prompt("Paste Registry JSON:");
     if (!raw) return;
@@ -1065,6 +1132,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       alert("Import failed: " + e.message);
     }
   });
+  consumeBuilderHandoff();
 
   // ─── Built-in examples modal ──────────────────────────────────
   const examplesBtn = $("example-btn");
@@ -1365,7 +1433,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   }
 
   // Compose-tab Export Model JSON button.
-  const exportBtn = $("registry-export-btn");
+  exportBtn = $("registry-export-btn");
   if (exportBtn) {
     exportBtn.addEventListener("click", () => {
       if (!registry) return;
@@ -1375,6 +1443,19 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         model,
         "Model JSON — the registry with your selections, runtime modes, slider, and section-random toggles woven into each section. Template-var values are not exported (placeholders like {location} remain in item text)."
       );
+    });
+  }
+
+  const openBuilderBtn = $("open-builder-btn");
+  if (openBuilderBtn) {
+    openBuilderBtn.addEventListener("click", () => {
+      try {
+        const payload = registry ? (buildModelExport() || { registry }) : null;
+        if (payload) localStorage.setItem(BUILDER_INBOX_KEY, JSON.stringify(payload));
+      } catch (e) {
+        console.warn("Failed to hand off registry to builder:", e);
+      }
+      window.location.href = "/builder";
     });
   }
 
@@ -1486,7 +1567,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       const raw = $("output-raw");
       const setOutput = (text) => {
         if (rendered) {
-          rendered.textContent = text;
+          rendered.innerHTML = renderMarkdown(text);
           rendered.classList.remove("italic");
         }
         if (raw) raw.value = text;
@@ -1546,7 +1627,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           generation: overrides,
         });
         const t0 = performance.now();
-        const response = await ollamaGenerate(conn, {
+        const req = {
           model: conn.model || "default",
           messages: [{ role: "user", content: prompt }],
           temperature: overrides.temperature ?? 0.8,
@@ -1554,7 +1635,18 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           top_p: overrides.top_p,
           top_k: overrides.top_k,
           repeat_penalty: overrides.repeat_penalty,
-        });
+        };
+        const useStream = !!$("stream-toggle")?.checked;
+        let response;
+        if (useStream) {
+          let accumulated = "";
+          response = await streamGenerate(conn, req, (delta) => {
+            accumulated += delta;
+            setOutput(accumulated);
+          });
+        } else {
+          response = await ollamaGenerate(conn, req);
+        }
         const ms = Math.round(performance.now() - t0);
         const text = response.text || "";
         setOutput(text || "(empty response)");
@@ -1735,6 +1827,8 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       if (aboutDots) aboutDots.appendChild(dot);
     }
 
+    const diagram = aboutModal.querySelector(".slide-diagram");
+
     function goToSlide(idx) {
       aboutSlides[aboutIdx].classList.remove("active");
       if (aboutDots) aboutDots.children[aboutIdx].classList.remove("active");
@@ -1743,6 +1837,35 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       if (aboutDots) aboutDots.children[aboutIdx].classList.add("active");
       if (aboutPrev) aboutPrev.disabled = aboutIdx === 0;
       if (aboutNext) aboutNext.disabled = aboutIdx === aboutSlides.length - 1;
+
+      // Tour prompt: show blocks whose data-show-at <= current slide
+      aboutModal.querySelectorAll(".tour-block, .tour-block-divider").forEach((el) => {
+        const threshold = parseInt(el.dataset.showAt, 10);
+        const wasVisible = el.classList.contains("visible");
+        const nowVisible = idx >= threshold;
+        if (nowVisible && !wasVisible) {
+          el.classList.add("visible", "just-added");
+          el.addEventListener("animationend", () => el.classList.remove("just-added"), { once: true });
+        } else if (!nowVisible) {
+          el.classList.remove("visible", "just-added");
+        }
+      });
+
+      // Tour empty message: hide once we reach its threshold slide
+      aboutModal.querySelectorAll("[data-hide-at]").forEach((el) => {
+        const threshold = parseInt(el.dataset.hideAt, 10);
+        el.hidden = idx >= threshold;
+      });
+
+      // Diagram: light up boxes whose data-step <= current slide, active = exact match
+      if (diagram) {
+        diagram.classList.toggle("step-all", idx === 0);
+        diagram.querySelectorAll("[data-step]").forEach((el) => {
+          const step = parseInt(el.dataset.step, 10);
+          el.classList.toggle("lit", idx > 0 && step <= idx);
+          el.classList.toggle("lit-active", idx > 0 && step === idx);
+        });
+      }
     }
 
     if (aboutPrev) aboutPrev.addEventListener("click", () => { if (aboutIdx > 0) goToSlide(aboutIdx - 1); });

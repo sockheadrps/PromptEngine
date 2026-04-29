@@ -17,14 +17,39 @@ controls.
 
 ## Browser-direct LLM
 
-The studio resolves prompts client-side and calls **your own** local
-Ollama from the browser. The studio process never touches the model.
+The studio asks the server to hydrate prompts, then calls **your own**
+local Ollama from the browser. The normal Studio Generate button does
+not run Python-side output-policy validation or retries.
 Configure the connection from the header chip — base URL, chat path,
 shape (Ollama / OpenAI-compatible), and the model name. Settings live
 in `localStorage`.
 
+![Connection settings](assets/screenshots/connection-modal.png)
+
 If you'd rather have the server make the LLM call (for headless tools,
 Notebooks, etc.), use the registry HTTP API below.
+
+## Builder (`/builder`)
+
+A visual form for constructing a registry from scratch without writing
+JSON by hand. Navigate to `/builder` from the Studio header.
+
+- **Load Example** — populates every section with a complete "Support
+  Bot" example so you can see all fields in one place.
+- **Import JSON** — paste an existing registry to load it into the form.
+- Each section (Base Context, Personas, Sentiment, Static Injections,
+  Runtime Injections, Output Directions, Examples, Prompt Endings) has
+  an **Add** button. Fill in the fields; the JSON preview updates live.
+- **Assembly Order** tab — drag-and-drop the token sequence that
+  controls how sections are woven together.
+- **Generation / Policy** tab — set temperature, top_p, max_tokens,
+  output policy rules, etc.
+- **Validate** — sends the current JSON to the server for a schema check.
+- **Generate Registry** — downloads / copies the finished JSON.
+- **Open in Studio** — pushes the registry directly to the Studio tab
+  via `localStorage` so you can start tuning immediately.
+
+![Builder overview](assets/screenshots/builder-overview.png)
 
 ## The two tabs
 
@@ -48,6 +73,8 @@ The primary surface. For each section:
   `+ var` button on each section adds a new `{var}` placeholder; the
   `×` next to a var removes it.
 
+![Studio Compose view](assets/screenshots/studio-compose.png)
+
 The Compose tab also has the **Registry** strip at the top:
 
 - **Import JSON…** — paste a registry to load.
@@ -63,18 +90,25 @@ The Compose tab also has the **Registry** strip at the top:
 - **Generation Overrides** — temperature, top_p, top_k, max_tokens,
   repeat_penalty, retries, max_prompt_chars. Hover any field name for a
   tooltip explaining what it does. Empty fields fall through to library
-  defaults.
+  defaults. Browser-direct generation uses the sampling fields; `retries`
+  is used by `Engine.run()` and `/api/registry/generate`.
+  `max_prompt_chars` is currently stored/exported but not enforced by
+  the engine.
 - The `examples`, `prompt_endings`, and injection sections also live
   here (as opposed to Compose) since they're "tuning" choices rather
   than primary content.
 
+![Studio Tuning view](assets/screenshots/studio-tuning.png)
+
 ## Output panel
 
-Three sub-tabs:
+Two sub-tabs:
 
 - **Output** — the generated text (rendered or raw view).
 - **Pre-generate** — the assembled prompt, exactly as it'll be sent.
   Pre-generate before Generate to inspect.
+
+![Pre-generate review](assets/screenshots/studio-pregenerate.png)
 
 Above the Output text:
 
@@ -83,6 +117,8 @@ Above the Output text:
 - **`<n>ms`** — total round-trip.
 - **`<n> tok · <n> chars`** — completion tokens (when the provider
   returns them) and the response char count.
+
+![Generated output](assets/screenshots/studio-output.png)
 
 ## Debug Trace
 
@@ -97,6 +133,8 @@ Far-right pane. Filled fresh on every Generate:
 - **Resolved Config** — base URL, chat path, model, shape, generation
   overrides.
 
+![Debug trace](assets/screenshots/studio-debug-trace.png)
+
 ## Snapshots
 
 The header **Snapshots** button opens a modal:
@@ -110,6 +148,8 @@ The header **Snapshots** button opens a modal:
 Storage is `localStorage` (`pl-registry-snapshots-v1`). Snapshots
 persist across reloads but stay on the device.
 
+![Snapshots modal](assets/screenshots/snapshots-modal.png)
+
 ## Registry HTTP API
 
 The studio also mounts these endpoints for headless use:
@@ -118,7 +158,7 @@ The studio also mounts these endpoints for headless use:
 | ----------------------------- | ---------------------------------------------------- |
 | `POST /api/registry/load`     | Parse + canonicalize a registry JSON.                |
 | `POST /api/registry/hydrate`  | Build the prompt for a given registry + state.       |
-| `POST /api/registry/generate` | Hydrate + LLM + output policy. Returns text + usage. |
+| `POST /api/registry/generate` | Hydrate + LLM + Python output policy. Returns text + usage. |
 | `GET  /health`                | Liveness check.                                      |
 
 Request body for `hydrate` / `generate`:

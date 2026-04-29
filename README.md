@@ -35,15 +35,24 @@ pip install "promptlibretto[studio,ollama]"
 promptlibretto-studio --port 8000
 ```
 
-Open `http://localhost:8000`, click **Import JSON…** to paste a registry
-(or start fresh), pick a persona / sentiment / examples, set runtime
-modes (random pick, specific value, or skip with `none`), fill in any
-template-var inputs, and click **Pre-generate** to see the assembled
-prompt or **Generate** to send it through your local Ollama.
+Open `http://localhost:8000`. The studio has two pages:
 
-When you like the setup, click **Export Model JSON** to copy the
-canonical registry — including selections, runtime modes, slider
-positions, and generation overrides. Then in your app:
+- **Studio** (`/`) — pick selections, set runtime modes, fill template
+  vars, pre-generate, and generate against your local Ollama. Click
+  **Export Model JSON** to copy the canonical registry.
+- **Builder** (`/builder`) — visual form-based editor for constructing a
+  registry from scratch. Hit **Load Example** to see a fully populated
+  registry covering every section, or **Import JSON** to load an
+  existing one. **Generate Registry** exports the JSON; **Open in
+  Studio** sends it directly to the Studio.
+
+![Studio Compose view](docs/assets/screenshots/studio-compose.png)
+
+![Builder overview](docs/assets/screenshots/builder-overview.png)
+
+When you like the setup, click **Export Model JSON** in the Studio to
+copy the canonical registry — including selections, runtime modes,
+slider positions, and generation overrides. Then in your app:
 
 ```python
 import asyncio
@@ -131,17 +140,20 @@ result = await eng.run(state=..., route="short")
 If a registry has no `routes`, the top-level `assembly_order` is the
 only path.
 
-## What's in a registry
+## Example registry shape
+
+This is a neutral shape example, not default content. Keep only the
+sections and tokens your prompt actually needs.
 
 ```jsonc
 {
   "registry": {
     "version": 22,
-    "title": "Twitch Chatter",
+    "title": "Example Registry",
     "assembly_order": [
       "output_prompt_directions",
       "base_context.text",
-      "persona.context",
+      "personas.context",
       "sentiment.context",
       "sentiment.nudges",
       "sentiment.scale",
@@ -153,8 +165,8 @@ only path.
       "required": true,
       "template_vars": ["location"],
       "items": [{
-        "name": "scene",
-        "text": "You're watching a streamer at {location}."
+        "name": "context",
+        "text": "Use this runtime context: {location}."
       }]
     },
     "personas": { "required": true, "items": [/* {id, context, base_directives[]} */] },
@@ -200,14 +212,15 @@ Everything below is exported from the top-level package
 | `Engine`                            | Hydrate / run / stream against a registry.              |
 | `Registry` / `Section` / `Route`    | The model dataclasses. `Registry.from_dict` / `to_dict` round-trip the JSON. |
 | `HydrateState`                      | Per-call state object. `HydrateState.from_dict({...})` accepts the dict shown earlier. |
-| `hydrate(reg, state, route, seed)`  | Functional version of `Engine.hydrate`. Useful when you don't need a provider. |
+| `hydrate(reg, state, *, route=None, seed=None)` | Functional version of `Engine.hydrate`. Useful when you don't need a provider. |
 | `load_registry(source, provider)`   | Parse path / JSON string / dict → `Engine`.             |
 | `export_json(engine_or_registry)`   | Serialize back to JSON string.                          |
 | `GenerationResult`                  | `text, accepted, prompt, route, reason, usage, timing, raw` |
 | `GenerationChunk`                   | `delta, done, result` — yielded by `Engine.stream`.     |
-| `GenerationConfig`                  | `model, temperature, top_p, top_k, max_tokens, repeat_penalty, retries, max_prompt_chars, timeout_ms`. |
+| `GenerationConfig`                  | `model, temperature, top_p, top_k, max_tokens, repeat_penalty, retries, max_prompt_chars, timeout_ms`. `max_prompt_chars` is stored in config but not enforced by the current engine. |
 | `OutputPolicy` / `OutputProcessor`  | Output cleaning + validation rules, see below.          |
-| `MockProvider` / `OllamaProvider`   | Built-in provider adapters.                             |
+| `MockProvider(responder=None, latency_ms=5.0)` | Echoes the prompt back, optionally transformed. Used in tests. |
+| `OllamaProvider`                    | Talks to Ollama or any OpenAI-compatible endpoint.      |
 | `ProviderAdapter` (Protocol)        | Implement `async def generate(request) -> ProviderResponse` to add your own. |
 | `StreamingProviderAdapter`          | Plus `def stream(request) -> AsyncIterator[ProviderStreamChunk]`. |
 | `supports_streaming(provider)`      | True iff the provider has a `stream` method.           |
@@ -248,7 +261,7 @@ OllamaProvider(
     base_url="http://localhost:11434",     # default
     chat_path="/api/chat",                 # or "/v1/chat/completions" for OpenAI-compat
     payload_shape="auto",                  # "ollama" | "openai" | "auto"
-    timeout=httpx.Timeout(120.0),          # passed to httpx.AsyncClient
+    client=httpx.AsyncClient(timeout=120.0),  # optional — pass a custom httpx.AsyncClient
 )
 ```
 
@@ -258,8 +271,9 @@ shims (LM Studio, llama.cpp's server, vLLM).
 
 ### `OutputPolicy` fields
 
-All optional, all merged with the registry's top-level policy + the
-selected route's policy:
+All optional. Registry-level policy applies by default; when a route
+defines `output_policy`, the route's fields replace fields with the
+same names before the processor is built:
 
 ```python
 OutputPolicy(
@@ -274,11 +288,12 @@ OutputPolicy(
 )
 ```
 
-Sequence-typed fields (`strip_prefixes`, `strip_patterns`,
-`forbidden_*`, `require_patterns`) are **additive** when merged — layered
-overrides accumulate rules rather than clobbering them. Scalars
-(`max_length`, `min_length`, `append_suffix`, `collapse_whitespace`) are
-**replace-on-merge**.
+`OutputPolicy.merged_with()` itself is additive for sequence-typed
+fields (`strip_prefixes`, `strip_patterns`, `forbidden_*`,
+`require_patterns`) and replace-on-merge for scalars. `Engine.run()`
+currently applies route policy with a dictionary update first, so a
+route-level sequence field replaces the registry-level value for that
+field rather than extending it.
 
 ### Generation overrides at registry / route level
 
@@ -314,7 +329,10 @@ Environment variables (server-side `/api/registry/generate` only):
 | `OLLAMA_CHAT_PATH`       | `/api/chat`              | Chat endpoint path (auto-detects shape). |
 
 The studio frontend itself goes browser-direct to the user's local
-Ollama; these vars only affect the optional server-side generate route.
+Ollama after asking the server to hydrate the prompt. In that path,
+response validation/retries are not applied by the Python engine; these
+vars and the engine's output policy only affect the optional
+server-side generate route.
 
 ## Development
 
