@@ -35,6 +35,7 @@
         <p class="hero-pull">Assembles final prompts from named, composable sections — like a darkroom enlarger compositing layers of light.</p>
         <div class="hero-editorial-foot">
           <button type="button" class="about-trigger" id="about-open-btn">About</button>
+          <button type="button" class="about-trigger" id="conn-help-btn">How local calls are made</button>
         </div>
       </div>
 
@@ -211,6 +212,45 @@ ollama serve</pre>
     </div><!-- /landing-content -->
 
   </div><!-- /landing-wrap -->
+
+  <!-- ── Connection help modal ─────────────────────────────────── -->
+  <div class="about-modal-backdrop" id="conn-help-modal" hidden>
+    <div class="conn-help-box">
+      <div class="about-modal-head">
+        <span class="about-modal-title">How connections work</span>
+        <button type="button" class="about-modal-close" id="conn-help-close-btn">✕</button>
+      </div>
+      <div class="conn-help-body">
+
+        <div class="conn-help-section">
+          <h4 class="conn-help-heading">Your LLM never leaves your network</h4>
+          <p>Every call to your local model — generation, classification, embedding — is made <strong>directly from your browser</strong> to your local server. The promptlibretto server at <code id="conn-help-origin"></code> is never in the path of those requests. Your prompts and responses travel from your browser to your local model and back, full stop.</p>
+        </div>
+
+        <div class="conn-help-section">
+          <h4 class="conn-help-heading">What the server actually does</h4>
+          <p>The server is a <strong>registry engine</strong>. A registry is a structured template — a set of named sections, each containing text variants and rules for how they combine. When you run a prompt, the server takes your registry and assembles it: it merges the sections you've selected, applies runtime modes, fills in template variables, and returns the final composed prompt text to your browser.</p>
+          <p>Your browser then takes that assembled prompt and sends it directly to your local model. The server has no knowledge of what your model says back.</p>
+        </div>
+
+        <div class="conn-help-section">
+          <h4 class="conn-help-heading">Memory-enabled runs (Studio / Ensemble)</h4>
+          <p>When memory is on, the server needs to coordinate embed calls to build the recall index. It does this by opening a lightweight WebSocket to your browser and asking your browser to perform the embed requests on its behalf. Your text goes from browser → local embed model → browser → server index. The server receives only the resulting vectors — not the raw text that was embedded.</p>
+        </div>
+
+        <div class="conn-help-section">
+          <h4 class="conn-help-heading">Why configure connections here at all?</h4>
+          <p>The server needs to know which model, endpoint, and payload shape to tell your browser to use. These settings are stored in your browser's <code>localStorage</code> — they're never sent to the server unless you trigger a run. The <em>Test</em> button calls your local model directly from your browser to verify reachability.</p>
+        </div>
+
+        <div class="conn-help-section">
+          <h4 class="conn-help-heading">CORS</h4>
+          <p>Because your browser makes the LLM calls, the same-origin policy applies. If this studio is served from a different origin than your local model, your model server must explicitly allow the studio origin. Without this, the browser silently blocks the request — it won't appear as a network error on the server side. Configure it once with <code>OLLAMA_ORIGINS</code> and it applies to all calls.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
 
   <!-- ── About modal ───────────────────────────────────────────── -->
   <div class="about-modal-backdrop" id="about-modal" hidden>
