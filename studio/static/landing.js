@@ -250,7 +250,7 @@ async function testEmbed() {
       setStatus(elEmbedSt, data.message || "Connection OK.", "ok");
       updateSidebarEmbed(model, "ok");
     } else {
-      setStatus(elEmbedSt, `Server responded ${resp.status}. Check URL and model.`, "err");
+      setStatus(elEmbedSt, data?.message || "Could not reach embed endpoint.", "err");
       updateSidebarEmbed("error", "err");
     }
   } catch (err) {
@@ -363,7 +363,7 @@ async function testClassifier() {
       setStatus(elClassSt, data.message || "Connection OK.", "ok");
       updateSidebarClassifier(model, "ok");
     } else {
-      setStatus(elClassSt, `Server responded ${resp.status}. Check URL and model.`, "err");
+      setStatus(elClassSt, data?.message || "Could not reach classifier endpoint.", "err");
       updateSidebarClassifier("error", "err");
     }
   } catch (err) {

@@ -94,13 +94,17 @@ class _TestConnRequest(BaseModel):
 @app.post("/api/test-embed")
 async def test_embed(req: _TestConnRequest) -> JSONResponse:
     base = req.baseUrl.rstrip("/")
-    headers = {"Authorization": f"Bearer {req.apiKey}"} if req.apiKey else {}
-    payload = {"model": req.model, "input": "test"}
-    paths = ["/api/embed", "/v1/embeddings"]
+    # Each entry: (path, payload). Try new Ollama, then old Ollama, then OpenAI-compat.
+    attempts = [
+        ("/api/embed",      {"model": req.model, "input": "test"}),
+        ("/api/embeddings", {"model": req.model, "prompt": "test"}),
+        ("/v1/embeddings",  {"model": req.model, "input": "test"}),
+    ]
+    last_err = "Could not reach embed endpoint."
     async with httpx.AsyncClient() as client:
-        for path in paths:
+        for path, payload in attempts:
             try:
-                resp = await client.post(f"{base}{path}", json=payload, headers=headers, timeout=15.0)
+                resp = await client.post(f"{base}{path}", json=payload, timeout=15.0)
                 if resp.status_code == 200:
                     data = resp.json()
                     dim: int | None = None
@@ -115,9 +119,11 @@ async def test_embed(req: _TestConnRequest) -> JSONResponse:
                         dim = len(data["embedding"])
                     msg = f"OK — {dim}-dim vector." if dim else "OK."
                     return JSONResponse({"ok": True, "message": msg})
-            except Exception:
+                last_err = f"Embed endpoint returned {resp.status_code}."
+            except Exception as exc:
+                last_err = str(exc)
                 continue
-    return JSONResponse({"ok": False, "message": "Could not reach embed endpoint."})
+    return JSONResponse({"ok": False, "message": last_err})
 
 
 @app.post("/api/test-classifier")
