@@ -20,9 +20,17 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') { aboutModal
 // ── Connection help modal ────────────────────────────────────
 const connHelpModal = document.getElementById('conn-help-modal');
 document.getElementById('conn-help-origin').textContent = window.location.origin;
+document.querySelectorAll("#conn-help-origin-win, #conn-help-origin-nix").forEach(el => el.textContent = window.location.origin);
 document.getElementById('conn-help-btn').addEventListener('click', () => { connHelpModal.hidden = false; });
 document.getElementById('conn-help-close-btn').addEventListener('click', () => { connHelpModal.hidden = true; });
 connHelpModal.addEventListener('click', e => { if (e.target === connHelpModal) connHelpModal.hidden = true; });
+
+window.chSwitchCorsTab = function(which) {
+  document.getElementById("ch-cors-tab-win").hidden = which !== "win";
+  document.getElementById("ch-cors-tab-nix").hidden = which !== "nix";
+  document.getElementById("ch-cors-btn-win").classList.toggle("cors-tab-active", which === "win");
+  document.getElementById("ch-cors-btn-nix").classList.toggle("cors-tab-active", which === "nix");
+};
 
 // ── CORS origin labels ───────────────────────────────────────
 const origin = window.location.origin;

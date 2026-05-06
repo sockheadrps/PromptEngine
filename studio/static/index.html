@@ -217,35 +217,48 @@ ollama serve</pre>
   <div class="about-modal-backdrop" id="conn-help-modal" hidden>
     <div class="conn-help-box">
       <div class="about-modal-head">
-        <span class="about-modal-title">How connections work</span>
+        <span class="about-modal-title">How local calls are made</span>
         <button type="button" class="about-modal-close" id="conn-help-close-btn">✕</button>
+      </div>
+      <div class="conn-help-masthead">
+        <div class="about-eyebrow">Architecture · Data flow</div>
+        <h3 class="conn-help-headline">Your model.<br><em>Your network.</em> Always.</h3>
+        <p class="about-deck">Every LLM call is made directly from your browser. The server is a registry engine — it never touches your model or your data.</p>
       </div>
       <div class="conn-help-body">
 
         <div class="conn-help-section">
-          <h4 class="conn-help-heading">Your LLM never leaves your network</h4>
-          <p>Every call to your local model — generation, classification, embedding — is made <strong>directly from your browser</strong> to your local server. The promptlibretto server at <code id="conn-help-origin"></code> is never in the path of those requests. Your prompts and responses travel from your browser to your local model and back, full stop.</p>
+          <h4>Your LLM never leaves your network</h4>
+          <p>Every call to your local model — generation, classification, embedding — is made <strong>directly from your browser</strong> to your local server. The promptlibretto server at <code id="conn-help-origin"></code> is never in that path. Your prompts and responses travel from your browser to your local model and back, full stop.</p>
+          <div class="about-pull">"Browser → your local model. The server watches none of it."</div>
         </div>
 
         <div class="conn-help-section">
-          <h4 class="conn-help-heading">What the server actually does</h4>
-          <p>The server is a <strong>registry engine</strong>. A registry is a structured template — a set of named sections, each containing text variants and rules for how they combine. When you run a prompt, the server takes your registry and assembles it: it merges the sections you've selected, applies runtime modes, fills in template variables, and returns the final composed prompt text to your browser.</p>
+          <h4>What the server actually does</h4>
+          <p>The server is a <strong>registry engine</strong>. A registry is a structured template — a set of named sections, each containing text variants and rules for how they combine. When you run a prompt, the server assembles the registry: merges selected sections, applies runtime modes, fills in template variables, and returns the composed prompt text to your browser.</p>
           <p>Your browser then takes that assembled prompt and sends it directly to your local model. The server has no knowledge of what your model says back.</p>
         </div>
 
         <div class="conn-help-section">
-          <h4 class="conn-help-heading">Memory-enabled runs (Studio / Ensemble)</h4>
-          <p>When memory is on, the server needs to coordinate embed calls to build the recall index. It does this by opening a lightweight WebSocket to your browser and asking your browser to perform the embed requests on its behalf. Your text goes from browser → local embed model → browser → server index. The server receives only the resulting vectors — not the raw text that was embedded.</p>
+          <h4>Memory-enabled runs</h4>
+          <p>When memory is on, the server coordinates embed calls to build the recall index. It opens a lightweight WebSocket to your browser and delegates the embed requests back to it — your text travels <code>browser → local embed model → browser → server index</code>. The server receives only the resulting vectors, not the raw text that produced them.</p>
         </div>
 
         <div class="conn-help-section">
-          <h4 class="conn-help-heading">Why configure connections here at all?</h4>
-          <p>The server needs to know which model, endpoint, and payload shape to tell your browser to use. These settings are stored in your browser's <code>localStorage</code> — they're never sent to the server unless you trigger a run. The <em>Test</em> button calls your local model directly from your browser to verify reachability.</p>
+          <h4>Why configure connections here?</h4>
+          <p>The server needs to know which model, endpoint, and payload shape to instruct your browser to use. These settings are stored in your browser's <code>localStorage</code> and are never sent to the server unless you trigger a run. The <em>Test</em> button calls your local model directly from your browser to verify reachability — the server is not involved.</p>
         </div>
 
         <div class="conn-help-section">
-          <h4 class="conn-help-heading">CORS</h4>
-          <p>Because your browser makes the LLM calls, the same-origin policy applies. If this studio is served from a different origin than your local model, your model server must explicitly allow the studio origin. Without this, the browser silently blocks the request — it won't appear as a network error on the server side. Configure it once with <code>OLLAMA_ORIGINS</code> and it applies to all calls.</p>
+          <h4>CORS</h4>
+          <p>Because your browser makes the LLM calls, the browser's same-origin policy applies. If this studio is served from a different origin than your local model, the model server must explicitly allow the studio origin. Without it, the browser silently blocks the request — nothing will appear as a network error on the server side. Set it once and it applies to every call:</p>
+          <div class="cors-tab-bar">
+            <button type="button" class="cors-tab-btn cors-tab-active" id="ch-cors-btn-win" onclick="chSwitchCorsTab('win')">Windows</button>
+            <button type="button" class="cors-tab-btn" id="ch-cors-btn-nix" onclick="chSwitchCorsTab('nix')">Linux / macOS</button>
+          </div>
+          <pre id="ch-cors-tab-win">$env:OLLAMA_ORIGINS="<span id="conn-help-origin-win"></span>"
+ollama serve</pre>
+          <pre id="ch-cors-tab-nix" hidden>OLLAMA_ORIGINS=<span id="conn-help-origin-nix"></span> ollama serve</pre>
         </div>
 
       </div>
