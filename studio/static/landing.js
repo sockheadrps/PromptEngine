@@ -175,7 +175,6 @@ if (stored.baseUrl) doTest(false);
 // ── Embed model ──────────────────────────────────────────────
 const embedStored = loadJson(EMBED_KEY);
 const elEmbedUrl   = document.getElementById("embed-base-url");
-const elEmbedKey   = document.getElementById("embed-api-key");
 const elEmbedModel = document.getElementById("embed-model");
 const elEmbedSt    = document.getElementById("embed-status");
 
@@ -235,7 +234,6 @@ elEmbedUrl.addEventListener("input", () => {
 async function testEmbed() {
   const baseUrl = elEmbedUrl.value.trim();
   const model   = elEmbedModel.value;
-  const apiKey  = elEmbedKey.value.trim();
   if (!baseUrl || !model) {
     setStatus(elEmbedSt, "Enter a base URL and select a model.", "err");
     return;
@@ -245,7 +243,7 @@ async function testEmbed() {
     const resp = await fetch("/api/test-embed", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, model, apiKey }),
+      body: JSON.stringify({ baseUrl, model }),
     });
     const data = resp.ok ? await resp.json() : null;
     if (resp.ok && data && data.ok) {
@@ -265,7 +263,6 @@ document.getElementById("embed-test-btn").addEventListener("click", testEmbed);
 document.getElementById("embed-save-btn").addEventListener("click", () => {
   saveJson(EMBED_KEY, {
     baseUrl: elEmbedUrl.value.trim(),
-    apiKey: elEmbedKey.value.trim(),
     model: elEmbedModel.value,
   });
   setStatus(elEmbedSt, "Saved.", "ok");
@@ -277,7 +274,7 @@ if (embedStored.baseUrl && embedStored.model) {
   fetch("/api/test-embed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ baseUrl: embedStored.baseUrl, model: embedStored.model, apiKey: embedStored.apiKey || "" }),
+    body: JSON.stringify({ baseUrl: embedStored.baseUrl, model: embedStored.model }),
   }).then(r => r.ok ? r.json() : null).then(data => {
     if (data && data.ok) {
       updateSidebarEmbed(embedStored.model, "ok");
@@ -291,7 +288,6 @@ if (embedStored.baseUrl && embedStored.model) {
 // ── Classifier model ─────────────────────────────────────────
 const classStored = loadJson(CLASS_KEY);
 const elClassUrl   = document.getElementById("classifier-base-url");
-const elClassKey   = document.getElementById("classifier-api-key");
 const elClassModel = document.getElementById("classifier-model");
 const elClassSt    = document.getElementById("classifier-status");
 
@@ -351,7 +347,6 @@ elClassUrl.addEventListener("input", () => {
 async function testClassifier() {
   const baseUrl = elClassUrl.value.trim();
   const model   = elClassModel.value;
-  const apiKey  = elClassKey.value.trim();
   if (!baseUrl || !model) {
     setStatus(elClassSt, "Enter a base URL and select a model.", "err");
     return;
@@ -361,7 +356,7 @@ async function testClassifier() {
     const resp = await fetch("/api/test-classifier", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, model, apiKey }),
+      body: JSON.stringify({ baseUrl, model }),
     });
     const data = resp.ok ? await resp.json() : null;
     if (resp.ok && data && data.ok) {
@@ -381,7 +376,6 @@ document.getElementById("classifier-test-btn").addEventListener("click", testCla
 document.getElementById("classifier-save-btn").addEventListener("click", () => {
   saveJson(CLASS_KEY, {
     baseUrl: elClassUrl.value.trim(),
-    apiKey: elClassKey.value.trim(),
     model: elClassModel.value,
   });
   setStatus(elClassSt, "Saved.", "ok");
@@ -393,7 +387,7 @@ if (classStored.baseUrl && classStored.model) {
   fetch("/api/test-classifier", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ baseUrl: classStored.baseUrl, model: classStored.model, apiKey: classStored.apiKey || "" }),
+    body: JSON.stringify({ baseUrl: classStored.baseUrl, model: classStored.model }),
   }).then(r => r.ok ? r.json() : null).then(data => {
     if (data && data.ok) {
       updateSidebarClassifier(classStored.model, "ok");
