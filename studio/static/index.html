@@ -227,6 +227,19 @@ ollama serve</pre>
       </div>
       <div class="conn-help-body">
 
+        <div class="conn-help-section conn-help-section--required">
+          <div class="conn-help-required-label">To use this tool you must</div>
+          <h4>Allow CORS on your local model server</h4>
+          <p>Because your browser makes the LLM calls directly, your local model server must allow this origin. Without it, the browser silently blocks every request — nothing will appear as a network error on the server side.</p>
+          <div class="cors-tab-bar">
+            <button type="button" class="cors-tab-btn cors-tab-active" id="ch-cors-btn-win" onclick="chSwitchCorsTab('win')">Windows</button>
+            <button type="button" class="cors-tab-btn" id="ch-cors-btn-nix" onclick="chSwitchCorsTab('nix')">Linux / macOS</button>
+          </div>
+          <pre id="ch-cors-tab-win">$env:OLLAMA_ORIGINS="<span id="conn-help-origin-win"></span>"
+ollama serve</pre>
+          <pre id="ch-cors-tab-nix" hidden>OLLAMA_ORIGINS=<span id="conn-help-origin-nix"></span> ollama serve</pre>
+        </div>
+
         <div class="conn-help-section">
           <h4>Your LLM never leaves your network</h4>
           <p>Every call to your local model — generation, classification, embedding — is made <strong>directly from your browser</strong> to your local server. The promptlibretto server at <code id="conn-help-origin"></code> is never in that path. Your prompts and responses travel from your browser to your local model and back, full stop.</p>
@@ -235,30 +248,12 @@ ollama serve</pre>
 
         <div class="conn-help-section">
           <h4>What the server actually does</h4>
-          <p>The server is a <strong>registry engine</strong>. A registry is a structured template — a set of named sections, each containing text variants and rules for how they combine. When you run a prompt, the server assembles the registry: merges selected sections, applies runtime modes, fills in template variables, and returns the composed prompt text to your browser.</p>
-          <p>Your browser then takes that assembled prompt and sends it directly to your local model. The server has no knowledge of what your model says back.</p>
+          <p>The server is a <strong>registry engine</strong>. A registry is a structured template — named sections, text variants, and rules for how they combine. When you run a prompt, the server assembles the registry and returns the composed prompt text to your browser. Your browser then sends it directly to your local model — the server never sees the response.</p>
         </div>
 
         <div class="conn-help-section">
           <h4>Memory-enabled runs</h4>
-          <p>When memory is on, the server coordinates embed calls to build the recall index. It opens a lightweight WebSocket to your browser and delegates the embed requests back to it — your text travels <code>browser → local embed model → browser → server index</code>. The server receives only the resulting vectors, not the raw text that produced them.</p>
-        </div>
-
-        <div class="conn-help-section">
-          <h4>Why configure connections here?</h4>
-          <p>The server needs to know which model, endpoint, and payload shape to instruct your browser to use. These settings are stored in your browser's <code>localStorage</code> and are never sent to the server unless you trigger a run. The <em>Test</em> button calls your local model directly from your browser to verify reachability — the server is not involved.</p>
-        </div>
-
-        <div class="conn-help-section">
-          <h4>CORS</h4>
-          <p>Because your browser makes the LLM calls, the browser's same-origin policy applies. If this studio is served from a different origin than your local model, the model server must explicitly allow the studio origin. Without it, the browser silently blocks the request — nothing will appear as a network error on the server side. Set it once and it applies to every call:</p>
-          <div class="cors-tab-bar">
-            <button type="button" class="cors-tab-btn cors-tab-active" id="ch-cors-btn-win" onclick="chSwitchCorsTab('win')">Windows</button>
-            <button type="button" class="cors-tab-btn" id="ch-cors-btn-nix" onclick="chSwitchCorsTab('nix')">Linux / macOS</button>
-          </div>
-          <pre id="ch-cors-tab-win">$env:OLLAMA_ORIGINS="<span id="conn-help-origin-win"></span>"
-ollama serve</pre>
-          <pre id="ch-cors-tab-nix" hidden>OLLAMA_ORIGINS=<span id="conn-help-origin-nix"></span> ollama serve</pre>
+          <p>When memory is on, the server opens a lightweight WebSocket to your browser and delegates embed requests back to it — your text travels <code>browser → local embed model → browser → server index</code>. The server receives only the resulting vectors, not the raw text.</p>
         </div>
 
       </div>

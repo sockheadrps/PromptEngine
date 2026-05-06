@@ -887,6 +887,22 @@ header { flex-shrink: 0; }
   border-bottom: 1px solid var(--border);
 }
 .conn-help-section:last-child { border-bottom: none; }
+.conn-help-section--required {
+  background: rgba(196, 150, 72, 0.05);
+  border: 1px solid rgba(196, 150, 72, 0.25);
+  border-radius: 6px;
+  padding: 16px 18px;
+  margin-bottom: 4px;
+}
+.conn-help-required-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
 .conn-help-section h4 {
   font-family: var(--font-display);
   font-size: 20px;
@@ -894,6 +910,10 @@ header { flex-shrink: 0; }
   font-style: italic;
   margin: 0 0 10px;
   color: var(--text);
+}
+.conn-help-section--required h4 {
+  font-size: 17px;
+  margin-bottom: 8px;
 }
 .conn-help-section p {
   margin: 0 0 10px;
