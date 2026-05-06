@@ -23,6 +23,48 @@ function escapeHtml(s) {
   }[c]));
 }
 
+function normalizeTemplateVarName(name) {
+  return String(name == null ? "" : name).trim().replace(/^\{+/, "").replace(/\}+$/, "");
+}
+
+function templateVarToken(name) {
+  const bare = normalizeTemplateVarName(name);
+  return bare ? `{${bare}}` : "";
+}
+
+function normalizeRegistryTemplateVars(reg) {
+  if (!reg || typeof reg !== "object") return reg;
+  for (const sec of Object.values(reg)) {
+    if (!sec || typeof sec !== "object") continue;
+    if (Array.isArray(sec.template_vars)) {
+      sec.template_vars = Array.from(
+        new Set(sec.template_vars.map(normalizeTemplateVarName).filter(Boolean))
+      );
+    }
+    if (sec.template_var_defaults && typeof sec.template_var_defaults === "object") {
+      const normalized = {};
+      for (const [key, val] of Object.entries(sec.template_var_defaults)) {
+        const bare = normalizeTemplateVarName(key);
+        if (bare) normalized[bare] = val;
+      }
+      sec.template_var_defaults = normalized;
+    }
+    for (const item of Array.isArray(sec.items) ? sec.items : []) {
+      if (!item || typeof item !== "object") continue;
+      if (Array.isArray(item.template_vars)) {
+        item.template_vars = Array.from(
+          new Set(item.template_vars.map(normalizeTemplateVarName).filter(Boolean))
+        );
+      }
+      for (const frag of Array.isArray(item.fragments) ? item.fragments : []) {
+        if (!frag || typeof frag !== "object" || !frag.condition) continue;
+        frag.condition = normalizeTemplateVarName(frag.condition);
+      }
+    }
+  }
+  return reg;
+}
+
 // Collect text fragments that came from sections whose content is randomly
 // rotated per generation — either `section_random: true` (whole item gets
 // rolled) or an `array_modes[field] = "random:N"` (specific list field
@@ -75,10 +117,11 @@ function describeFragments(reg, tvarMap) {
     for (const item of sec.items) {
       if (!Array.isArray(item.fragments) || !item.fragments.length) continue;
       const frags = item.fragments.map((f) => {
-        const v = f.condition || f.if_var || f.var || "";
+        const rawVar = f.condition || f.if_var || f.var || "";
+        const v = normalizeTemplateVarName(rawVar);
         const val = v ? String(tvarMap[`${secKey}::${v}`] || "").trim() : "";
         return {
-          var: v,
+          var: templateVarToken(v),
           fired: !v || !!val,
           text: String(f.text || ""),
         };
@@ -161,7 +204,12 @@ function _flattenV2State(state) {
   const tvarMap = {}, secRandom = {}, arrayModes = {}, sliderRandom = {};
   for (const [key, sec] of Object.entries(state)) {
     if (!sec || typeof sec !== "object") continue;
-    if (sec.template_vars) Object.assign(tvarMap, sec.template_vars);
+    if (sec.template_vars && typeof sec.template_vars === "object") {
+      for (const [varName, value] of Object.entries(sec.template_vars)) {
+        const bare = normalizeTemplateVarName(varName);
+        if (bare) tvarMap[`${key}::${bare}`] = value;
+      }
+    }
     if (sec.section_random) secRandom[key] = true;
     if (sec.slider_random) sliderRandom[key] = true;
     if (sec.array_modes && typeof sec.array_modes === "object") {
@@ -440,9 +488,10 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     for (const [secKey, sec] of Object.entries(registry)) {
       if (!sec || !Array.isArray(sec.template_vars)) continue;
       for (const v of sec.template_vars) {
-        if (RUNTIME_INJECTED_VARS.has(v)) continue;
-        const val = (tvarValues[`${secKey}::${v}`] || "").trim();
-        if (!val) missing.push({ section: secKey, varName: v });
+        const bare = normalizeTemplateVarName(v);
+        if (RUNTIME_INJECTED_VARS.has(bare)) continue;
+        const val = (tvarValues[`${secKey}::${bare}`] || "").trim();
+        if (!val) missing.push({ section: secKey, varName: templateVarToken(bare) });
       }
     }
     return missing;
@@ -1193,11 +1242,12 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
               const itemVars = Array.isArray(it.template_vars) ? it.template_vars : [];
               const itemVarsHtml = itemVars
                 .map((v) => {
-                  const k = `runtime_injections::${v}`;
+                  const bare = normalizeTemplateVarName(v);
+                  const k = `runtime_injections::${bare}`;
                   const val = tvarValues[k] || "";
                   return (
                     `<div class="registry-tvar-row">` +
-                    `<span class="registry-tvar-name">{${escapeHtml(v)}}</span>` +
+                    `<span class="registry-tvar-name">${escapeHtml(templateVarToken(bare))}</span>` +
                     `<input type="text" data-tvar="${escapeHtml(k)}" value="${escapeHtml(val)}" placeholder="value">` +
                     `</div>`
                   );
@@ -1274,25 +1324,26 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         `</div>` +
         (sec.template_vars || [])
           .map((v) => {
-            if (RUNTIME_INJECTED_VARS.has(v)) {
+            const bare = normalizeTemplateVarName(v);
+            if (RUNTIME_INJECTED_VARS.has(bare)) {
               return (
                 `<div class="registry-tvar-row registry-tvar-row--runtime">` +
-                `<span class="registry-tvar-name">${escapeHtml(v)}</span>` +
+                `<span class="registry-tvar-name">${escapeHtml(templateVarToken(bare))}</span>` +
                 `<span class="registry-tvar-runtime-badge">runtime</span>` +
                 `</div>`
               );
             }
-            const k = `${key}::${v}`;
+            const k = `${key}::${bare}`;
             const val = tvarValues[k] || "";
             return (
               `<div class="registry-tvar-row">` +
-              `<span class="registry-tvar-name">${escapeHtml(v)}</span>` +
+              `<span class="registry-tvar-name">${escapeHtml(templateVarToken(bare))}</span>` +
               `<input type="text" data-tvar="${escapeHtml(k)}" value="${escapeHtml(
                 val
               )}" placeholder="value">` +
               `<button type="button" class="registry-tvar-remove" data-tvar-remove="${escapeHtml(
                 key
-              )}::${escapeHtml(v)}" title="Remove this template var">×</button>` +
+              )}::${escapeHtml(bare)}" title="Remove this template var">×</button>` +
               `</div>`
             );
           })
@@ -1342,7 +1393,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           if (!sec) return;
           const raw = prompt("Template variable name (e.g. location):");
           if (!raw) return;
-          const name = raw.trim().replace(/^\{|\}$/g, "");
+          const name = normalizeTemplateVarName(raw);
           if (!name) return;
           if (!Array.isArray(sec.template_vars)) sec.template_vars = [];
           if (!sec.template_vars.includes(name)) sec.template_vars.push(name);
@@ -1354,7 +1405,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           const [k, v] = btn.dataset.tvarRemove.split("::");
           const sec = registry[k];
           if (!sec || !Array.isArray(sec.template_vars)) return;
-          sec.template_vars = sec.template_vars.filter((x) => x !== v);
+          sec.template_vars = sec.template_vars.filter((x) => normalizeTemplateVarName(x) !== v);
           delete tvarValues[`${k}::${v}`];
           buildControls();
         });
@@ -1400,7 +1451,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   let _memorySessionId = null;
 
   function loadRegistryDict(parsed) {
-    registry = parsed.registry || parsed;
+    registry = normalizeRegistryTemplateVars(parsed.registry || parsed);
     Object.keys(tvarValues).forEach((k) => delete tvarValues[k]);
     Object.keys(arrayModes).forEach((k) => delete arrayModes[k]);
     Object.keys(sectionRandom).forEach((k) => delete sectionRandom[k]);
@@ -1420,7 +1471,8 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       if (ss.template_vars && typeof ss.template_vars === "object") {
         for (const [v, val] of Object.entries(ss.template_vars)) {
           if (val == null) continue;
-          tvarValues[`${k}::${v}`] = String(val);
+          const bare = normalizeTemplateVarName(v);
+          if (bare) tvarValues[`${k}::${bare}`] = String(val);
         }
       }
     }
@@ -1439,8 +1491,9 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       // template_var_defaults always provide fallback values
       if (sec.template_var_defaults && typeof sec.template_var_defaults === "object") {
         for (const [v, val] of Object.entries(sec.template_var_defaults)) {
-          if (val == null || tvarValues[`${k}::${v}`] != null) continue;
-          tvarValues[`${k}::${v}`] = String(val);
+          const bare = normalizeTemplateVarName(v);
+          if (!bare || val == null || tvarValues[`${k}::${bare}`] != null) continue;
+          tvarValues[`${k}::${bare}`] = String(val);
         }
       }
     }
@@ -1910,7 +1963,8 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       if (ss.template_vars && typeof ss.template_vars === "object") {
         for (const [v, val] of Object.entries(ss.template_vars)) {
           if (val == null) continue;
-          tvarValues[`${key}::${v}`] = String(val);
+          const bare = normalizeTemplateVarName(v);
+          if (bare) tvarValues[`${key}::${bare}`] = String(val);
         }
       }
     }
@@ -1920,7 +1974,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   function restoreSnapshot(snap) {
     if (!snap || !snap.registry) return;
     clearLoadedExample();
-    registry = JSON.parse(JSON.stringify(snap.registry));
+    registry = normalizeRegistryTemplateVars(JSON.parse(JSON.stringify(snap.registry)));
     Object.keys(arrayModes).forEach((k) => delete arrayModes[k]);
     Object.keys(sectionRandom).forEach((k) => delete sectionRandom[k]);
     Object.keys(sectionSliders).forEach((k) => delete sectionSliders[k]);

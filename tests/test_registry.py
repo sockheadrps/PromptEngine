@@ -69,6 +69,36 @@ def test_hydrate_honors_explicit_section_state(twitch_registry: Registry) -> Non
     assert "Your opinion is negative:" in out
 
 
+def test_hydrate_accepts_braced_template_var_keys_for_fragments() -> None:
+    reg = Registry.from_dict(
+        {
+            "version": 2,
+            "title": "Braced Vars",
+            "assembly_order": ["base_context.text"],
+            "base_context": {
+                "required": True,
+                "template_vars": ["{company}"],
+                "items": [
+                    {
+                        "id": "ctx",
+                        "text": "",
+                        "fragments": [
+                            {
+                                "condition": "{company}",
+                                "text": "Calling {company} support.",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+    )
+    state = RegistryState(
+        sections={"base_context": SectionState(template_vars={"{company}": "ArcaneCo"})}
+    )
+    assert hydrate(reg, state) == "Calling ArcaneCo support."
+
+
 def test_hydrate_array_mode_random_is_seeded(twitch_registry: Registry) -> None:
     state = RegistryState(
         sections={

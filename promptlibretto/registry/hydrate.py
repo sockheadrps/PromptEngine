@@ -56,6 +56,19 @@ def _get_pre_context(item: dict[str, Any]) -> Optional[str]:
     return item.get("pre_context") or item.get("pre_context:") or None
 
 
+def _bare_var(name: Any) -> str:
+    return str(name or "").strip().lstrip("{").rstrip("}")
+
+
+def _template_var_value(vars_dict: dict[str, Any], name: Any) -> Any:
+    bare = _bare_var(name)
+    if not bare:
+        return ""
+    if bare in vars_dict:
+        return vars_dict[bare]
+    return vars_dict.get(f"{{{bare}}}", "")
+
+
 def _apply_template_vars(text: Any, sec_key: str, state: RegistryState) -> str:
     """Substitute ``{var}`` placeholders using the section's resolved vars."""
     if not isinstance(text, str) or not text:
@@ -64,7 +77,10 @@ def _apply_template_vars(text: Any, sec_key: str, state: RegistryState) -> str:
     if not vars_dict:
         return text
     out = text
-    for bare, val in vars_dict.items():
+    for key, val in vars_dict.items():
+        bare = _bare_var(key)
+        if not bare:
+            continue
         out = out.replace(f"{{{bare}}}", val)
     return out
 
@@ -201,7 +217,7 @@ def _render_fragments(
             continue
         condition = f.get("condition") or ""
         if condition:
-            val = state.get(sec_key).template_vars.get(condition, "")
+            val = _template_var_value(state.get(sec_key).template_vars, condition)
             if not val or not str(val).strip():
                 continue
         text = _apply_template_vars(str(f.get("text") or ""), sec_key, state)

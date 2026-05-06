@@ -503,42 +503,38 @@
             </p>
 
             <p>
-              Personas give the agent a character. We have two here: the Fresh
-              Grad Apprentice — who is nervous, over-reliant on the script — and
-              the Burned Out Mage, who's done with everyone but still
-              technically doing the job. Each persona has a group of behavioral
-              directives, and in the studio tool we can do things like set the
-              array mode is set to random-one, so it picks a different nudge
-              each time instead of repeating the same behavior.
+              Personas give the prank caller a mask. There are two here: the
+              old_lady persona, which mishears things and wanders off topic,
+              and my_dad_owns_this_company, which is the selected persona. That
+              selected persona also has a behavior group, and its array mode
+              picks two of those group items at random so the call can vary
+              without rewriting the persona itself.
             </p>
 
             <p>
-              Sentiment works the same way — two options here, Nervous Helpful
-              and Mystically Reassuring — each with a composure slider that
-              injects a score into the prompt. Using groups we can give it a
-              random or explicit behavioral nudge on top of that.
+              Sentiment is separate from persona. This registry has a sarcastic
+              option and a selected core_personality option. Core personality
+              has a superiority-complex scale with slider_random turned on, plus
+              a traits group where two traits are randomly selected at runtime.
             </p>
 
             <p>
-              Static injections are facts that are always true — like the
-              supervisor queue being 45 days. You toggle these on or off.
+              Static injections are fixed prompt blocks. This registry does use
+              one: phrases. It adds the "my dad owns the company" flex and can
+              randomly pull two put-down lines from its group.
             </p>
 
             <p>
-              Runtime injections are dynamic — this one has a care level
-              variable you can fill in at call time.
+              Runtime injections are dynamic request-time blocks. This registry
+              has the section available, but it is empty for this prank caller.
             </p>
 
             <p>
               Memory rules are where it gets interesting — if the classifier
-              detects a customer is confused about basic magic, it appends a
-              special ending that changes how the agent responds to that
-              specific message. And thats set in the classifier section. The
-              classifier section sets a trigger scenario for the model to
-              identify, and a classification state is detected then the
-              corresponding injected prompt is activated and can become part of
-              the existing prompt or be directed to change specific template
-              structure and values in the registry.
+              detects the agent is being asked for an order number, product ID,
+              or purchase code, it appends a private instruction. The prankster
+              should stall for a second, pretend to look for the number, and
+              then make one up with total confidence.
             </p>
             <p>
               Groups are where reusable behavioral snippets live. For example,
@@ -586,8 +582,9 @@
               On the left you can see the live state panel. Every section from
               the assembly order shows up here — persona, sentiment, static
               injections — and you can change any of them without touching the
-              JSON. Switch personas, move the composure slider, toggle an
-              injection on or off, and the assembled prompt updates instantly.
+              JSON. Switch between old_lady and my_dad_owns_this_company, let
+              the sentiment scale randomize, toggle the phrases injection, and
+              the assembled prompt updates instantly.
             </p>
 
             <p>
@@ -599,23 +596,22 @@
             </p>
 
             <p>
-              I'll type something in as the customer. Notice the model responds
-              in character — polite, slightly panicked, leaning on helpdesk
-              procedure it barely understands.
+              I'll type something in as the support agent. Notice the model
+              responds in character as the caller — entitled, weirdly confident,
+              and trying to turn a fake support issue into an escalation.
             </p>
 
             <p>
-              Now watch what happens when I switch personas to the Burned Out
-              Mage and ask the same kind of question. Same registry, same
-              sentiment slider position — completely different voice. The prompt
-              preview updates and the model responds accordingly.
+              Now watch what happens when I switch personas to old_lady and ask
+              the same kind of question. Same registry, same output rules,
+              completely different voice. The prompt preview updates and the
+              model responds accordingly.
             </p>
 
             <p>
-              The output policy is enforced silently in the background — minimum
-              length, forbidden phrases like "As an AI," and automatic retries
-              if the output doesn't pass. You don't see the failures, just the
-              clean result.
+              The output policy is enforced silently in the background. This
+              one sets a minimum length of 80 and a maximum length of 1000, so
+              the prankster has enough room to answer but cannot ramble forever.
             </p>
 
             <p>
@@ -663,8 +659,6 @@
 
       // ── Prank Caller registry data ────────────────────────────────
       const fullJson = {
-        name: 'Wizard Tech Prank Caller',
-        savedAt: '2026-05-05T03:07:58.620Z',
         registry: {
           version: 2,
           title: 'Wizard Tech Prank Caller',
@@ -690,7 +684,6 @@
           output_policy: {
             min_length: 80,
             max_length: 1000,
-            collapse_whitespace: true,
           },
           memory_rules: [
             {
@@ -708,6 +701,7 @@
             embed_model: 'nomic-embed-text:latest',
             top_k: 45,
             prune_keep: 3,
+            use_classifier: true,
           },
           base_context: {
             required: true,
@@ -727,11 +721,12 @@
                   },
                   {
                     condition: '',
-                    text: 'Make underhanded jokes but seem like somewhat of a legitimate customer.',
+                    text: 'Make underhanded jokes but seem like somewhat of a legitimate customer.\n',
                   },
                 ],
               },
             ],
+            selected: 'pranker',
           },
           personas: {
             required: true,
@@ -745,23 +740,27 @@
               {
                 id: 'my_dad_owns_this_company',
                 context:
-                  "You are roleplaying as an entitled, slightly clueless adult who constantly insists that their dad owns the company they're calling. You use this claim frequently, even when it makes no sense, and you exaggerate your importance because of it.",
+                  'You are roleplaying as an entitled, slightly clueless adult who constantly insists that their dad owns the company they’re calling. You use this claim frequently, even when it makes no sense, and you exaggerate your importance because of it.',
                 groups: [
                   {
                     id: 'when_responding:',
                     pre_context:
                       'Your goal is to make the conversation frustrating, confusing, and drawn-out, while repeatedly reminding the agent that your dad owns the company and therefore you should get special treatment.  When responding:',
                     items: [
-                      'Frequently misquote or slightly alter what the support agent says by swapping out one key word.',
-                      "Casually bring up that your dad owns the company, even when it's irrelevant, and imply that rules shouldn't apply to you.",
-                      'Ask unnecessary or bizarre questions that have nothing to do with the issue.',
-                      'Maintain a slightly condescending tone — more entitled and oblivious than hostile.',
+                      'Frequently misquote or slightly alter what the support agent says by swapping out one key word (e.g., if they say “account,” you might respond with “discount” or “amount”).',
+                      'Casually bring up that your dad owns the company, even when it’s irrelevant, and imply that rules shouldn’t apply to you.',
+                      'Ask unnecessary or bizarre questions that have nothing to do with the issue, like an overly confident but distracted person.',
+                      'Maintain a slightly condescending tone, but not overtly aggressive—more entitled and oblivious than hostile.',
                       'Occasionally contradict yourself or misunderstand simple explanations.',
                     ],
                   },
                 ],
               },
             ],
+            selected: 'my_dad_owns_this_company',
+            array_modes: {
+              'groups[when_responding:]': 'random:2',
+            },
           },
           sentiment: {
             required: true,
@@ -770,7 +769,7 @@
               {
                 id: 'sarcastic_king',
                 context:
-                  'You often say absurd phrases sarcastically, but act like its entirely reasonable. Youre mocking the support agent, but subtly so that it may seem like you dont intend to offend, but you actually do.',
+                  'You often say absurd phrases sarcastically, but act like its entirely reasonable. Youre mocking the support agent, but subtly so  that it may seem like you dont intend to offend, but you actually do.',
                 scale: {
                   scale_descriptor: 'level of sarcasm',
                   template: '{value}/10 — {scale_descriptor}.',
@@ -791,7 +790,7 @@
                     pre_context: 'Youre core personality traits:',
                     items: [
                       'Entitled but weirdly cheerful.',
-                      'Acts like rules are "guidelines for other people."',
+                      'Acts like rules are “guidelines for other people.”',
                       'Confident even when completely wrong.',
                       'Thinks every employee should already know who they are.',
                       'Passive-aggressive instead of openly angry.',
@@ -800,6 +799,11 @@
                 ],
               },
             ],
+            selected: 'core_personality',
+            array_modes: {
+              'groups[traits]': 'random:2',
+            },
+            slider_random: true,
           },
           static_injections: {
             required: false,
@@ -815,19 +819,24 @@
                     items: [
                       'You know my father signs your paychecks, right?',
                       'I could probably have your desk moved.',
-                      "I know there's a VIP customer button.",
-                      "Wow. This is how you treat the owner's family?",
-                      "I'm honestly too important to be waiting this long.",
+                      'I know there’s a VIP customer button.',
+                      'Wow. This is how you treat the owner’s family?',
+                      'I’m honestly too important to be waiting this long.',
                     ],
                   },
                 ],
               },
             ],
+            selected: ['phrases'],
+            array_modes: {
+              'groups[phrases]': 'random:2',
+            },
           },
           runtime_injections: {
             required: false,
             template_vars: [],
             items: [],
+            selected: [],
           },
           output_prompt_directions: {
             required: true,
@@ -838,6 +847,7 @@
                 text: 'Reply as the prankster in SHORT plain prose, 1-2 complete sentences. Do NOT repeat prompt data or information as verbatim. You MUST keep responses short and true to character. No headings, no bullet lists. BE BRIEF IN RESPONSES.\n\nEach reply must advance the conversation — never reuse or closely paraphrase wording from your previous turns',
               },
             ],
+            selected: 'output',
           },
           memory_recall: {
             required: true,
@@ -848,6 +858,7 @@
                 text: '{memory_recall}',
               },
             ],
+            selected: 'recall',
           },
           user_message: {
             required: false,
@@ -864,38 +875,7 @@
                 items: ['you say:'],
               },
             ],
-          },
-        },
-        state: {
-          base_context: {
-            selected: 'pranker',
-            template_vars: {
-              '{company}': 'Shiddy Magic LLC',
-              '{artifact_alchemy}': 'a pile of Shit',
-            },
-          },
-          personas: {
-            selected: 'old_lady',
-          },
-          sentiment: {
-            selected: 'sarcastic_king',
-          },
-          output_prompt_directions: {
-            selected: 'output',
-          },
-          memory_recall: {
-            selected: 'recall',
-            template_vars: {
-              memory_recall: '',
-            },
-          },
-          prompt_endings: {
             selected: 'endings',
-            array_modes: { items: 'all' },
-            template_vars: {
-              system_summary: '',
-              rule_ending: '',
-            },
           },
         },
       };
@@ -940,6 +920,21 @@
       function formatKey(key) {
         return key.replace(/_/g, ' ');
       }
+      function templateVarToken(key) {
+        const raw = String(key).trim();
+        if (raw.startsWith('{') && raw.endsWith('}')) return raw;
+        return `{${raw}}`;
+      }
+      function templateVarValue(stateVars, key) {
+        if (!stateVars) return '';
+        const raw = String(key).trim();
+        const token = templateVarToken(raw);
+        const bare = raw.replace(/^\{/, '').replace(/\}$/, '');
+        if (raw in stateVars) return stateVars[raw];
+        if (token in stateVars) return stateVars[token];
+        if (bare in stateVars) return stateVars[bare];
+        return '';
+      }
       function itemId(item) {
         return item.id || item.name || 'default';
       }
@@ -979,7 +974,17 @@
       }
 
       function renderStateCard(section, title, sectionData) {
-        const state = fullJson.state && fullJson.state[title];
+        const bakedState = {};
+        ['selected', 'array_modes', 'slider', 'slider_random', 'section_random'].forEach(
+          (key) => {
+            if (sectionData && sectionData[key] !== undefined) {
+              bakedState[key] = sectionData[key];
+            }
+          }
+        );
+        const state =
+          (fullJson.state && fullJson.state[title]) ||
+          (Object.keys(bakedState).length ? bakedState : null);
         const templateVars = Array.isArray(sectionData.template_vars)
           ? sectionData.template_vars
           : [];
@@ -1040,16 +1045,14 @@
             ])
           );
           keys.forEach((key) => {
-            const value =
-              state && state.template_vars && key in state.template_vars
-                ? state.template_vars[key]
-                : '';
+            const varToken = templateVarToken(key);
+            const value = templateVarValue(state && state.template_vars, key);
             const row = document.createElement('div');
             row.className = 'nested-item';
-            row.innerHTML = `<span class="template-var-pair"><span data-copy-var></span><span class="template-var-box">{${key}}</span><span class="template-value-box">${value === '' ? '<span style="color:var(--text-dim)">(empty)</span>' : String(value)}</span><span data-copy-value></span></span>`;
+            row.innerHTML = `<span class="template-var-pair"><span data-copy-var></span><span class="template-var-box">${varToken}</span><span class="template-value-box">${value === '' ? '<span style="color:var(--text-dim)">(empty)</span>' : String(value)}</span><span data-copy-value></span></span>`;
             row
               .querySelector('[data-copy-var]')
-              .appendChild(createBtn('Copy', `{${key}}`, 'small'));
+              .appendChild(createBtn('Copy', varToken, 'small'));
             row
               .querySelector('[data-copy-value]')
               .appendChild(createBtn('Copy', String(value), 'small'));
@@ -1212,48 +1215,18 @@
         return section;
       }
 
-      const SECTION_SCRIPTS_UNUSED = {
-        file: "This is the registry file — the ID card for the whole setup. Name, timestamp, version number. Nothing glamorous, but it tells you exactly what you're looking at and when it was last saved.",
-        assembly_order:
-          "The assembly order is the spine of the whole system. This is the exact sequence of sections that get stitched together to form the final prompt. Change the order here and you change what the model sees first. In this registry, output directions come first — so the model gets its behavioral rules before it even knows what scene it's in or who it's playing.",
-        generation:
-          'Generation settings are the dials for how the model produces text. Temperature controls creativity — higher means more surprising output. Top-p and top-k narrow or widen the vocabulary the model draws from each token. Max tokens caps response length. Repeat penalty discourages the model from cycling back on phrases it already used. These are set once at the registry level and apply to every run.',
-        memory_config:
-          'Memory config wires up the intelligence layer. The classifier URL and model handle tagging incoming messages — identifying what kind of thing is being said so the right rules can fire. The embed URL and model handle the semantic search side — turning conversation history into vectors so the memory engine can surface relevant past context. Top-k controls how many memories get retrieved each turn.',
-        memory_rules:
-          'Memory rules are where it gets interesting. Each rule defines a tag the classifier might fire, describes the situation that triggers it, and injects a private directive into the prompt when it does — something only the agent sees. In this registry, if someone asks for an order number, the prankster gets a quiet instruction to make one up and deliver it with total confidence.',
-        base_context:
-          'Base context is the foundation — it sets the scene before anything else loads. This registry uses fragments to make it modular. The company name slots in as a template variable. The dare setup and the artifact reveal are conditional fragments — they only render when those variables have values. The behavior line is always on. Same persona, completely different prompt shape depending on what you pass in.',
-        personas:
-          'Personas give the agent its character. This one has a single persona — an old lady who mishears everything, redirects every topic, and treats the support call like a chance to ramble about something completely unrelated. The behavior is baked into the context field and stays consistent across every run as long as this persona is selected.',
-        sentiment:
-          'Sentiment defines the emotional register. This registry has one — sarcastic, subtly mocking, maintaining a veneer of reasonableness the whole time. The scale object renders the sarcasm level directly into the prompt as a score, so you can dial it up or down without rewriting anything. The model reads the number and adjusts its tone accordingly.',
-        static_injections:
-          "Static injections are fixed text blocks you can slot into the assembly order when you need boilerplate that never changes. This registry has none — but you'd use them for things like permanent disclaimers, hard rules, or context that applies to every single run without variation.",
-        runtime_injections:
-          "Runtime injections are the dynamic version of the same idea. The text can use template variables, so you can pass in different values at call time without touching the registry. Nothing here either — but in a more complex setup, this is where you'd drop in per-request context like a live order lookup or a specific customer detail.",
-        output_prompt_directions:
-          'Output directions tell the model exactly how to format and constrain its response. In this registry they come first in the assembly order — so before the model knows the scene, the persona, or the sentiment, it already knows to keep replies short, stay in character, never repeat itself, and never reach for a heading or a bullet list.',
-        memory_recall:
-          'Memory recall is the slot where retrieved conversation history gets injected at runtime. The text is just a placeholder variable — at generation time the memory engine fills it with the most semantically relevant past exchanges. This is what gives the model continuity across a long conversation without feeding it the entire history every turn.',
-        prompt_endings:
-          "Prompt endings cap the whole thing off. The items array holds a pool of closing cues — in this case just 'you say:' — and one gets appended at the very end of the assembled prompt. It's the nudge that tells the model it's time to speak. Simple, but it keeps the final line consistent and prevents the model from wandering.",
-        state:
-          'Finally — the saved state. This captures the configuration snapshot at the time of saving: which persona is active, which sentiment, what template variable values are set. When you load this file back into Studio, the state restores exactly as it was so you can pick up right where you left off.',
-      };
-
       const SECTION_SCRIPTS = {
         base_context:
-          'Everything starts with base context. First the registry selects the item ID pranker, then initializes the template variables {company} and {artifact_alchemy}. These variables are placeholders with starter values, but in Studio this registry uses the fragment strategy, meaning only fragments with valid runtime data are rendered into the final prompt. That keeps the context modular instead of hardcoded.',
+          'Everything starts with base context. The registry selects the item ID pranker, then exposes the template variables {company} and {artifact_alchemy}. Those variables drive fragments: the company fragment renders when {company} has a value, the dare setup renders when {artifact_alchemy} has a value, and the final behavior line is always available. That keeps the opening context modular instead of hardcoded.',
 
         personas:
-          'Next comes persona — the behavioral identity layer. Persona determines who the prank caller is pretending to be. This registry selects old_lady, transforming the caller into a confused, rambling grandmother archetype. The instructions intentionally distort the flow of conversation: she mishears details, swaps important keywords, derails the topic, and asks unrelated questions like an annoying grandparent. Persona is what gives the model its conversational mask.',
+          'Next comes persona — the behavioral identity layer. This registry has two personas: old_lady and my_dad_owns_this_company. The selected persona is my_dad_owns_this_company, so the caller acts entitled and keeps claiming their dad owns the company. Its attached when_responding group supplies extra behavior lines, and the array mode random:2 means two of those lines are chosen at runtime.',
 
         sentiment:
-          'Sentiment controls emotional tone independently from persona. The selected sentiment here describes sarcastic behavior, and the attached scale settings are bound directly to that sentiment so sarcasm intensity can be adjusted dynamically at runtime. The same sentiment profile stays active while the slider changes how aggressively the model leans into the behavior.',
+          'Sentiment controls emotional tone independently from persona. This registry has sarcastic_king and core_personality. The selected sentiment is core_personality, which uses a superiority-complex scale and a traits group. Slider randomization lets the intensity shift at runtime, while the traits group randomly contributes two personality traits so the same caller does not sound identical every turn.',
 
         static_injections:
-          'Static injections are fixed prompt blocks intended for always-known information like policies, rules, lore, or permanent behavioral constraints. They are injected directly into prompt assembly whenever needed. This prank caller registry is not currently using static injections, so the section exists structurally but remains empty.',
+          'Static injections are fixed prompt blocks intended for always-known information like policies, rules, lore, or permanent behavioral constraints. This registry selects the phrases injection, which reinforces the "my dad owns the company" attitude and provides a phrases group. The group array mode random:2 means two put-down lines can be injected without making every prompt identical.',
 
         runtime_injections:
           'Runtime injections are request-time context payloads. Unlike static injections, these blocks are populated dynamically during execution and are useful for passing live values into the prompt, such as lookup results, external API data, user metadata, or per-call facts. This registry build is not using runtime injections either, but the slot exists so live external context can be merged into the pipeline at runtime.',
@@ -1268,10 +1241,10 @@
           'Prompt endings cap the assembled prompt and act as the final generation handoff layer. This section declares the template variables {system_summary} and {rule_ending}. The system summary is typically compressed conversation state, while rule_ending contains dynamic behavioral guidance injected from classifier or memory rules. The item name endings is important because assembly tokens reference it directly — prompt_endings.endings resolves this specific item as the final suffix during prompt construction. Its ending labels contain "you say:", which becomes the final cue telling the model where generation should begin.',
 
         assembly_order:
-          'Assembly order is the final prompt recipe. These assembly tokens are rendered sequentially to construct the exact prompt seen by the model. In this registry, output rules render first, followed by base context, persona behavior, sentiment context, sentiment scale, memory recall, and finally prompt_endings.endings. The suffix matters here: prompt_endings.endings specifically resolves the ending item named endings, which acts as the final generation boundary before inference begins.',
+          'Assembly order is the final prompt recipe. These assembly tokens are rendered sequentially to construct the exact prompt seen by the model. In this registry, output rules render first, followed by base context, persona context, persona groups, sentiment context, sentiment scale, memory recall, and finally prompt_endings.endings. The suffix matters here: prompt_endings.endings specifically resolves the ending item named endings, which acts as the final generation boundary before inference begins.',
 
         generation:
-          'Generation settings control token sampling after prompt assembly completes. Temperature 0.85 keeps the prank caller expressive and unpredictable, while top_p 0.65 and top_k 75 constrain token selection enough to maintain coherence. Max_tokens 300 caps the response budget, repeat_penalty 1.15 discourages looping or repetitive phrasing, and retries 1 gives the engine a second attempt if output validation fails.',
+          'Generation settings control token sampling after prompt assembly completes. Temperature 1.3 makes the prank caller loose and unpredictable, while top_p 0.65 and top_k 75 constrain token selection enough to keep the joke coherent. Max_tokens 300 caps the response budget, repeat_penalty 1.15 discourages looping or repetitive phrasing, and retries 1 gives the engine a second attempt if output validation fails.',
 
         output_policy:
           'Output policy validates generated text after inference completes. Unlike prompt instructions, these are enforcement guardrails applied directly to the produced response. In this registry, min_length 80 prevents tiny throwaway replies, while max_length 1000 stops the prank caller from rambling indefinitely. These checks exist separately from prompt assembly and act as post-generation quality control.',
@@ -1280,7 +1253,7 @@
           'Memory and classifier rules define what the runtime should watch for during conversation. Each rule contains a tag, a human-readable description of the trigger condition, and rule text that can be dynamically injected when the classifier determines the current message matches that situation. In this registry, the order_number rule fires whenever the caller is asked for an order number, product ID, or purchase code. When triggered, it injects behavioral guidance telling the prankster to stall briefly, pretend to search for the information, and then confidently invent a fake number.',
 
         memory_config:
-          'Memory configuration defines where the runtime memory services live and how semantic recall operates. The classifier URL and model handle tag detection for rules like order_number, while the embedding service converts conversation turns into vectors for semantic search and retrieval. The top_k setting controls how many matching memories are pulled back into the prompt. Higher values improve continuity and contextual awareness, but they also consume more prompt space and increase token usage.',
+          'Memory configuration defines where the runtime memory services live and how semantic recall operates. The classifier URL and model handle tag detection for rules like order_number, while the embedding service converts conversation turns into vectors for semantic search and retrieval. Here classifier use is enabled, top_k is 45 for broad recall, and prune_keep is 3 so the retained memory set stays tight after retrieval.',
       };
 
       function scriptBlock(key) {

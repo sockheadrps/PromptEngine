@@ -25,6 +25,16 @@ const SECTION_LABELS = {
 
 const STUDIO_INBOX_KEY = "pl-studio-handoff-v1";
 const BUILDER_INBOX_KEY = "pl-builder-handoff-v1";
+
+function normalizeTemplateVarName(name) {
+  return String(name == null ? "" : name).trim().replace(/^\{+/, "").replace(/\}+$/, "");
+}
+
+function templateVarToken(name) {
+  const bare = normalizeTemplateVarName(name);
+  return bare ? `{${bare}}` : "";
+}
+
 const GEN_FIELDS = [
   ["temperature", "gen-temperature", parseFloat],
   ["top_p", "gen-top-p", parseFloat],
@@ -709,7 +719,7 @@ function closeModal() {
 function saveModal() {
   if (!currentModalContext) return;
   const key = currentModalContext;
-  const val = document.getElementById("modal-input").value.trim();
+  const val = normalizeTemplateVarName(document.getElementById("modal-input").value);
   if (val && !registryState.sections[key].template_vars.includes(val)) {
     registryState.sections[key].template_vars.push(val);
   }
@@ -718,12 +728,13 @@ function saveModal() {
 }
 
 function removeVar(key, varName) {
-  registryState.sections[key].template_vars = registryState.sections[key].template_vars.filter((v) => v !== varName);
+  const bare = normalizeTemplateVarName(varName);
+  registryState.sections[key].template_vars = registryState.sections[key].template_vars.filter((v) => normalizeTemplateVarName(v) !== bare);
   initApp();
 }
 
 function addEntryVar(type, uiId, rawVal) {
-  const varName = (rawVal || "").trim().replace(/^\{|\}$/g, "");
+  const varName = normalizeTemplateVarName(rawVal);
   if (!varName) return;
   const entry = registryState.sections[type].items.find((e) => e._ui_id === uiId);
   if (!entry) return;
@@ -738,7 +749,8 @@ function addEntryVar(type, uiId, rawVal) {
 function removeEntryVar(type, uiId, varName) {
   const entry = registryState.sections[type].items.find((e) => e._ui_id === uiId);
   if (!entry || !Array.isArray(entry.template_vars)) return;
-  entry.template_vars = entry.template_vars.filter((v) => v !== varName);
+  const bare = normalizeTemplateVarName(varName);
+  entry.template_vars = entry.template_vars.filter((v) => normalizeTemplateVarName(v) !== bare);
   renderItems(type);
   exportFullModel();
 }
@@ -799,16 +811,18 @@ function addEntry(type) {
 }
 
 function renderFragmentsEditor(type, uiId, fragments) {
-  const tvars = registryState.sections[type].template_vars || [];
+  const tvars = (registryState.sections[type].template_vars || [])
+    .map(normalizeTemplateVarName)
+    .filter(Boolean);
   const hint = tvars.length
     ? `fires conditionally — uses ${tvars.map((v) => `{${v}}`).join(", ")}`
     : "add template vars to this section to use conditions";
   const rows = (fragments || []).map((frag, i) => {
-    const condition = frag.condition || frag.if_var || frag.var || "";
+    const condition = normalizeTemplateVarName(frag.condition || frag.if_var || frag.var || "");
     const text = frag.text || "";
     const opts = [`<option value="">always</option>`]
       .concat(tvars.map((v) =>
-        `<option value="${escapeHtml(v)}"${condition === v ? " selected" : ""}>if {${escapeHtml(v)}}</option>`
+        `<option value="${escapeHtml(v)}"${condition === v ? " selected" : ""}>if ${escapeHtml(templateVarToken(v))}</option>`
       ))
       .join("");
     return `<div class="frag-row">
@@ -1006,12 +1020,12 @@ function renderItems(type) {
     let html = "";
 
     if (type === "runtime_injections") {
-      const tvars = entry.template_vars || [];
+      const tvars = (entry.template_vars || []).map(normalizeTemplateVarName).filter(Boolean);
       const varBadges = tvars.map((v) =>
-        `<span class="var-badge" title="Click to remove" onclick="removeEntryVar('runtime_injections', ${entry._ui_id}, '${escapeHtml(v)}')">{${escapeHtml(v)}}</span>`
+        `<span class="var-badge" title="Click to remove" onclick="removeEntryVar('runtime_injections', ${entry._ui_id}, '${escapeHtml(v)}')">${escapeHtml(templateVarToken(v))}</span>`
       ).join(" ");
       const varHint = tvars.length
-        ? `use ${tvars.map((v) => `<code>{${escapeHtml(v)}}</code>`).join(", ")} in the text`
+        ? `use ${tvars.map((v) => `<code>${escapeHtml(templateVarToken(v))}</code>`).join(", ")} in the text`
         : "add template vars above to reference them as <code>{var_name}</code>";
       html = `
         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -1264,10 +1278,23 @@ function applyRegistryJson(json) {
     const { required, template_vars, template_var_defaults, items, ...extras } = importedSection;
     next.sections[key] = {
       required: required !== undefined ? required : next.sections[key].required,
-      template_vars: Array.isArray(template_vars) ? [...template_vars] : [],
+      template_vars: Array.isArray(template_vars)
+        ? Array.from(new Set(template_vars.map(normalizeTemplateVarName).filter(Boolean)))
+        : [],
       extras,
       items: (items || []).map((item) => {
         const entry = { ...item, _ui_id: Date.now() + Math.random() };
+        if (Array.isArray(entry.template_vars)) {
+          entry.template_vars = Array.from(
+            new Set(entry.template_vars.map(normalizeTemplateVarName).filter(Boolean))
+          );
+        }
+        if (Array.isArray(entry.fragments)) {
+          entry.fragments = entry.fragments.map((frag) => ({
+            ...frag,
+            condition: normalizeTemplateVarName(frag.condition || frag.if_var || frag.var || ""),
+          }));
+        }
         if (key === "runtime_injections" && !Array.isArray(entry.template_vars)) entry.template_vars = [];
         if ((key === "personas" || key === "sentiment") && Array.isArray(entry.groups)) {
           entry.groups = inlineGroupRefs(entry.groups);
@@ -1449,7 +1476,7 @@ function initApp() {
     const varBadges = (config.template_vars || [])
       .map(
         (v) =>
-          `<span class="var-badge" title="Click to remove" onclick="event.stopPropagation(); removeVar('${key}', '${v}')">${v}</span>`
+          `<span class="var-badge" title="Click to remove" onclick="event.stopPropagation(); removeVar('${key}', '${normalizeTemplateVarName(v)}')">${escapeHtml(templateVarToken(v))}</span>`
       )
       .join(" ");
 
