@@ -999,9 +999,10 @@ function renderMemView(_name, data) {
     const seed = personality.seed || "";
     const amends = personality.amendments || [];
     const assembled = personality.assembled || "";
+    const status = personality._file_exists === false ? "initialized in memory" : `${amends.length} amendment${amends.length !== 1 ? "s" : ""}`;
     sections.push(`
       <details class="memview-section" ${seed || amends.length ? "open" : ""}>
-        <summary>Personality <span class="memview-section-meta">${amends.length} amendment${amends.length !== 1 ? "s" : ""}</span></summary>
+        <summary>Personality <span class="memview-section-meta">${status}</span></summary>
         <div class="memview-section-body">
           ${seed ? `<div class="memview-section-meta" style="margin-bottom:4px">SEED</div><pre>${escHtml(seed)}</pre>` : `<div class="memview-empty">No seed.</div>`}
           ${amends.length

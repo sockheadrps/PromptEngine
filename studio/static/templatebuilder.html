@@ -287,10 +287,10 @@
 
               <div class="mem-config-card" id="mem-server-managed-paths">
                 <div class="mem-config-card-title">Storage</div>
-                <label><span>store_path <span class="label-hint">leave blank for default</span></span>
-                  <input id="mem-store-path" type="text" placeholder="~/.promptlibretto/memory_stores/" oninput="exportFullModel()" />
+                <label><span>store_path <span class="label-hint">leave blank for workspace + registry default</span></span>
+                  <input id="mem-store-path" type="text" placeholder="memory.db" oninput="exportFullModel()" />
                 </label>
-                <label><span>personality_file</span>
+                <label><span>personality_file <span class="label-hint">leave blank for workspace + registry default</span></span>
                   <input id="mem-personality-file" type="text" placeholder="personality.json" oninput="exportFullModel()" />
                 </label>
               </div>

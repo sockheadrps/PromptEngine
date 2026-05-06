@@ -130,7 +130,13 @@ Memory routes live under `/api/memory`.
 
 The `/api/memory/generate` response includes text, prompt, retrieved chunks, extracted tags, applied rules, timing, usage, and classifier stats.
 
-Memory files (vector store, personality) are resolved from the registry title and `memory_config`. In multi-tenant mode they are nested under a per-user directory in `~/.promptlibretto/memory_stores/`.
+Memory files are scoped by workspace/user and registry title. By default, a registry stores its vector DB and personality profile under:
+
+```
+~/.promptlibretto/memory_stores/{workspace_or_user_id}/{registry_title}/
+```
+
+The default files are `memory.db` and `personality.json`. Relative `memory_config.store_path` and `memory_config.personality_file` values are anchored inside that registry-specific directory, so `personality.json` remains unique per workspace and registry. Absolute paths are honored only outside multi-tenant mode.
 
 ## Ensemble HTTP API
 
@@ -153,13 +159,13 @@ The server sends pending requests over the socket; the browser calls its local m
 
 ## Multi-Tenant Mode
 
-When multi-tenant mode is enabled, the server assigns each visitor a persistent anonymous user ID cookie. Memory files (vector store, personality, working notes, system summary) are then partitioned under:
+When multi-tenant mode is enabled, the server assigns each visitor a persistent anonymous user ID cookie. Studio requests also send an `X-Workspace` header, which is preferred when present. Memory files are partitioned under:
 
 ```
-~/.promptlibretto/memory_stores/{user_id}/
+~/.promptlibretto/memory_stores/{workspace_or_user_id}/{registry_title}/
 ```
 
-Single-user deployments (the default) share a common store path.
+Single-user deployments use the same workspace-aware layout when requests include `X-Workspace`.
 
 ## Environment
 

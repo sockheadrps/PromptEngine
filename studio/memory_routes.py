@@ -68,36 +68,42 @@ def _safe_name(title: str) -> str:
     return "".join(c if c in _SAFE_CHARS else "_" for c in title) or "default"
 
 
-def _default_store_path(title: str) -> str:
-    stores_dir = Path.home() / ".promptlibretto" / "memory_stores"
-    stores_dir.mkdir(parents=True, exist_ok=True)
-    return str(stores_dir / f"{_safe_name(title)}.db")
-
-
 def _get_user_id(request: Request) -> str:
-    return request.cookies.get(USER_ID_COOKIE, "anonymous")
+    return request.headers.get("X-Workspace") or request.cookies.get(USER_ID_COOKIE, "anonymous")
 
 
-def _tenant_stores_dir(user_id: str) -> Path:
-    d = Path.home() / ".promptlibretto" / "memory_stores" / _safe_name(user_id)
+def _registry_stores_dir(request: Request, title: str) -> Path:
+    d = (
+        Path.home()
+        / ".promptlibretto"
+        / "memory_stores"
+        / _safe_name(_get_user_id(request))
+        / _safe_name(title)
+    )
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _resolve_store_path(request: Request, title: str, cfg: dict) -> str:
-    if MULTI_TENANT:
-        return str(_tenant_stores_dir(_get_user_id(request)) / f"{_safe_name(title)}.db")
-    return cfg.get("store_path") or _default_store_path(title)
+    scoped_dir = _registry_stores_dir(request, title)
+    path = cfg.get("store_path") or ""
+    if not path or MULTI_TENANT:
+        return str(scoped_dir / "memory.db")
+    p = Path(path)
+    return str(p if p.is_absolute() else scoped_dir / p)
 
 
 def _resolve_personality_path(request: Request, registry_dict: dict) -> str:
     from promptlibretto import Registry
     inner = dict(registry_dict.get("registry") or registry_dict)
     reg = Registry.from_dict({"registry": inner})
-    if MULTI_TENANT:
-        d = _tenant_stores_dir(_get_user_id(request))
-        return str(d / f"{_safe_name(reg.title)}_personality.json")
-    return _personality_path(registry_dict)
+    cfg = reg.memory_config
+    scoped_dir = _registry_stores_dir(request, reg.title)
+    path = cfg.get("personality_file") or ""
+    if not path or MULTI_TENANT:
+        return str(scoped_dir / "personality.json")
+    p = Path(path)
+    return str(p if p.is_absolute() else scoped_dir / p)
 
 
 class ConnectionConfig(BaseModel):
@@ -131,22 +137,6 @@ class PersonalityRequest(BaseModel):
 class PersonalitySaveRequest(BaseModel):
     registry: dict[str, Any]
     profile: dict[str, Any]
-
-
-def _personality_path(registry_dict: dict[str, Any]) -> str:
-    from promptlibretto import Registry
-    inner = dict(registry_dict.get("registry") or registry_dict)
-    reg = Registry.from_dict({"registry": inner})
-    cfg = reg.memory_config
-    stores_dir = Path.home() / ".promptlibretto" / "memory_stores"
-    stores_dir.mkdir(parents=True, exist_ok=True)
-    path = cfg.get("personality_file") or ""
-    if not path:
-        path = str(stores_dir / f"{_safe_name(reg.title)}_personality.json")
-    elif not Path(path).is_absolute():
-        # bare filename or relative path — anchor to stores dir
-        path = str(stores_dir / path)
-    return path
 
 
 @router.post("/personality")

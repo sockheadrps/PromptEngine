@@ -26,15 +26,19 @@ def _safe_name(s: str) -> str:
     return "".join(c if c in _SAFE_CHARS else "_" for c in s) or "default"
 
 
-def _stores_dir(user_id: str = "") -> Path:
+def _stores_dir(user_id: str = "", registry_title: str = "") -> Path:
     base = Path.home() / ".promptlibretto" / "memory_stores"
-    d = (base / _safe_name(user_id)) if (MULTI_TENANT and user_id) else base
+    d = base
+    if user_id:
+        d = d / _safe_name(user_id)
+    if registry_title:
+        d = d / _safe_name(registry_title)
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
 def _get_user_id(request: Request) -> str:
-    return request.cookies.get(USER_ID_COOKIE, "")
+    return request.headers.get("X-Workspace") or request.cookies.get(USER_ID_COOKIE, "")
 
 
 async def _build_memory(
@@ -107,9 +111,9 @@ async def _build_memory(
 
     # Per-participant store path: <title>_<participant>.db so two
     # participants using the same registry still get separate stores.
-    title = _safe_name(reg.title or "ensemble")
-    sd = _stores_dir(user_id)
-    store_path = str(sd / f"{title}_{_safe_name(participant_name)}.db")
+    sd = _stores_dir(user_id, reg.title or "ensemble")
+    participant = _safe_name(participant_name)
+    store_path = str(sd / f"{participant}.db")
 
     # Per-participant personality file: respect config if set (single-tenant only), else default.
     if pf_setting and not MULTI_TENANT:
@@ -119,7 +123,7 @@ async def _build_memory(
             else str(sd / pf_setting)
         )
     else:
-        pf_path = str(sd / f"{title}_{_safe_name(participant_name)}_personality.json")
+        pf_path = str(sd / f"{participant}_personality.json")
 
     # Working notes file lives next to the personality + store for the same
     # participant — auto path unless overridden.
@@ -131,7 +135,7 @@ async def _build_memory(
             else str(sd / notes_setting)
         )
     else:
-        notes_path = str(sd / f"{title}_{_safe_name(participant_name)}_notes.json")
+        notes_path = str(sd / f"{participant}_notes.json")
 
     if ws_embedder is not None:
         embedder = ws_embedder
@@ -151,6 +155,8 @@ async def _build_memory(
     mem_router = Router.from_registry_rules(reg.memory_rules)
     personality = PersonalityLayer(pf_path)
     personality.load()
+    if not Path(pf_path).exists():
+        personality.save()
 
     # Working notes layer — only constructed when the side-call provider
     # is available. The notes use the participant's main model.
@@ -167,7 +173,7 @@ async def _build_memory(
         working_notes = WorkingNotesLayer(notes_path)
         working_notes.load()
     if sysum_on:
-        sysum_path = str(sd / f"{title}_{_safe_name(participant_name)}_sysum.json")
+        sysum_path = str(sd / f"{participant}_sysum.json")
         system_summary = SystemSummaryLayer(sysum_path)
         system_summary.load()
 
@@ -279,24 +285,23 @@ def _participant_paths(reg, participant_name: str, user_id: str = "") -> dict[st
     """Resolve all per-participant memory file paths used at run-time, so
     reset/view operate on the same files the engine reads/writes."""
     cfg = reg.memory_config or {}
-    title = _safe_name(reg.title or "ensemble")
     name  = _safe_name(participant_name)
-    base  = _stores_dir(user_id)
+    base  = _stores_dir(user_id, reg.title or "ensemble")
     pf_setting = cfg.get("personality_file") or ""
-    if pf_setting:
+    if pf_setting and not MULTI_TENANT:
         pf = pf_setting if Path(pf_setting).is_absolute() else str(base / pf_setting)
     else:
-        pf = str(base / f"{title}_{name}_personality.json")
+        pf = str(base / f"{name}_personality.json")
     notes_setting = cfg.get("working_notes_file") or ""
-    if notes_setting:
+    if notes_setting and not MULTI_TENANT:
         notes = notes_setting if Path(notes_setting).is_absolute() else str(base / notes_setting)
     else:
-        notes = str(base / f"{title}_{name}_notes.json")
+        notes = str(base / f"{name}_notes.json")
     return {
-        "store":       str(base / f"{title}_{name}.db"),
+        "store":       str(base / f"{name}.db"),
         "personality": pf,
         "notes":       notes,
-        "sysum":       str(base / f"{title}_{name}_sysum.json"),
+        "sysum":       str(base / f"{name}_sysum.json"),
     }
 
 
@@ -407,11 +412,10 @@ async def view_store(req: ViewStoreRequest, request: Request) -> dict[str, Any]:
             store.close()
             await embedder.aclose()
 
-        personality = None
-        if Path(paths["personality"]).exists():
-            layer = PersonalityLayer(paths["personality"])
-            profile = layer.load()
-            personality = profile.to_dict()
+        layer = PersonalityLayer(paths["personality"])
+        profile = layer.load()
+        personality = profile.to_dict()
+        personality["_file_exists"] = Path(paths["personality"]).exists()
 
         notes = None
         if Path(paths["notes"]).exists():
