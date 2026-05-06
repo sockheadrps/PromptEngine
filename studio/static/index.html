@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>promptlibretto studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/stylev2.css" />
+  <link rel="stylesheet" href="/static/landing.css" />
+</head>
+<body>
+  <header>
+    <div class="header-brand">
+      <h1>promptlibretto</h1>
+      <nav class="header-page-nav">
+        <span class="header-page-link active">Home</span>
+        <a href="/builder" class="header-page-link">Builder</a>
+        <a href="/studio" class="header-page-link">Studio</a>
+        <a href="/ensemble" class="header-page-link">Ensemble</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="landing-wrap">
+
+    <!-- ── Hero strip ─────────────────────────────────────────── -->
+    <div class="landing-hero">
+      <div class="hero-editorial">
+        <div class="hero-editorial-top">
+          <div class="hero-kicker">Compositing Suite · v2</div>
+          <h2 class="hero-title">Prompt registry<br><em>compositing</em> studio.</h2>
+        </div>
+        <p class="hero-pull">Assembles final prompts from named, composable sections — like a darkroom enlarger compositing layers of light.</p>
+        <div class="hero-editorial-foot">
+          <button type="button" class="about-trigger" id="about-open-btn">About</button>
+        </div>
+      </div>
+
+      <!-- Nav cards — stacked vertically -->
+      <div class="hero-nav">
+        <a href="/studio" class="cr-panel cr-panel--studio">
+          <div class="cr-panel-inner">
+            <div class="cr-panel-name">Studio</div>
+            <div class="cr-panel-desc">Load a registry. Tune selections, runtime modes, template vars, and generation settings.</div>
+          </div>
+        </a>
+        <a href="/builder" class="cr-panel cr-panel--builder">
+          <div class="cr-panel-inner">
+            <div class="cr-panel-name">Builder</div>
+            <div class="cr-panel-desc">Visual form for constructing a registry from scratch. No JSON editing required.</div>
+          </div>
+        </a>
+        <a href="/ensemble" class="cr-panel cr-panel--ensemble">
+          <div class="cr-panel-inner">
+            <div class="cr-panel-name">Ensemble</div>
+            <div class="cr-panel-desc">Run two models in conversation. Adversarial testing, critique loops, synthetic dialogue.</div>
+          </div>
+        </a>
+      </div>
+    </div>
+
+    <!-- ── Main two-column layout ──────────────────────────────── -->
+    <div class="landing-content">
+
+      <!-- LEFT: connection config ────────────────────────────────── -->
+      <div class="conn-col">
+
+        <!-- Connection configuration -->
+        <div class="section-block">
+          <div class="section-head conn-tab-head">
+            <span class="section-head-title">Connection Configuration</span>
+            <div class="conn-tabs">
+              <button type="button" class="conn-tab active" data-tab="llm">LLM</button>
+              <button type="button" class="conn-tab" data-tab="embed">Embed</button>
+              <button type="button" class="conn-tab" data-tab="classifier">Classifier</button>
+            </div>
+          </div>
+
+          <!-- ── LLM / Chat model ──────────────────────────── -->
+          <div class="conn-tab-panel" id="conn-tab-llm">
+            <div class="conn-form">
+              <div class="conn-form-row">
+                <label>Base URL
+                  <input type="text" id="conn-base-url" placeholder="http://localhost:11434" />
+                </label>
+                <label>Chat path
+                  <input type="text" id="conn-chat-path" placeholder="/api/chat" />
+                </label>
+              </div>
+              <label>Payload shape
+                <select id="conn-shape">
+                  <option value="auto">auto</option>
+                  <option value="ollama">ollama</option>
+                  <option value="openai">openai</option>
+                </select>
+              </label>
+              <label>Model
+                <div class="conn-model-row">
+                  <select id="conn-model"></select>
+                  <button type="button" class="ghost-action small" id="conn-test-btn">Test</button>
+                </div>
+              </label>
+              <div class="conn-status" id="conn-status"></div>
+              <div class="conn-actions">
+                <button type="button" class="action-btn action-btn--primary" id="conn-save-btn">Save connection</button>
+              </div>
+              <div class="conn-cors">
+                <strong>CORS note.</strong> If the studio is on a different origin than your local model, Ollama needs to allow it. Without this, requests silently fail.
+                <div class="cors-tab-bar">
+                  <button type="button" class="cors-tab-btn cors-tab-active" id="cors-btn-win" onclick="switchCorsTab('win')">Windows</button>
+                  <button type="button" class="cors-tab-btn" id="cors-btn-nix" onclick="switchCorsTab('nix')">Linux / macOS</button>
+                </div>
+                <pre id="cors-tab-win" class="cors-pre">$env:OLLAMA_ORIGINS="<span id="cors-origin-win"></span>"
+ollama serve</pre>
+                <pre id="cors-tab-nix" class="cors-pre" hidden>OLLAMA_ORIGINS=<span id="cors-origin-nix"></span> ollama serve</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Embed model ────────────────────────────────── -->
+          <div class="conn-tab-panel" id="conn-tab-embed" hidden>
+            <div class="conn-form">
+              <div class="conn-form-row">
+                <label>Base URL
+                  <input type="text" id="embed-base-url" placeholder="http://localhost:11434" />
+                </label>
+                <label>API Key
+                  <input type="password" id="embed-api-key" placeholder="optional" />
+                </label>
+              </div>
+              <label>Model
+                <div class="conn-model-row">
+                  <select id="embed-model"></select>
+                  <button type="button" class="test-btn" id="embed-test-btn">Test Connection</button>
+                </div>
+              </label>
+              <div class="test-status" id="embed-status"></div>
+              <div class="conn-actions">
+                <button type="button" class="action-btn action-btn--primary" id="embed-save-btn">Save embed config</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Classifier model ───────────────────────────── -->
+          <div class="conn-tab-panel" id="conn-tab-classifier" hidden>
+            <div class="conn-form">
+              <div class="conn-form-row">
+                <label>Base URL
+                  <input type="text" id="classifier-base-url" placeholder="http://localhost:11434" />
+                </label>
+                <label>API Key
+                  <input type="password" id="classifier-api-key" placeholder="optional" />
+                </label>
+              </div>
+              <label>Model
+                <div class="conn-model-row">
+                  <select id="classifier-model"></select>
+                  <button type="button" class="test-btn" id="classifier-test-btn">Test Connection</button>
+                </div>
+              </label>
+              <div class="test-status" id="classifier-status"></div>
+              <div class="conn-actions">
+                <button type="button" class="action-btn action-btn--primary" id="classifier-save-btn">Save classifier config</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div><!-- /LEFT -->
+
+      <div class="sidebar-stack">
+        <div class="section-block">
+          <div class="section-head">
+            <span class="section-head-title">Connection Status</span>
+          </div>
+          <div class="section-body" style="display:flex;flex-direction:column;gap:12px;">
+            <div>
+              <div style="font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Chat model</div>
+              <div class="status-line" id="sidebar-conn-status">—</div>
+            </div>
+            <div style="height:1px;background:var(--border);"></div>
+            <div>
+              <div style="font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Embed model</div>
+              <div class="status-line" id="sidebar-embed-status">—</div>
+            </div>
+            <div style="height:1px;background:var(--border);"></div>
+            <div>
+              <div style="font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:6px;">Classifier model</div>
+              <div class="status-line" id="sidebar-classifier-status">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-block">
+          <div class="section-head">
+            <span class="section-head-title">Workspace</span>
+          </div>
+          <div class="section-body" style="display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <div class="ws-uuid-label">Workspace ID</div>
+              <div class="ws-uuid-val" id="ws-uuid-display"></div>
+            </div>
+            <div class="ws-actions">
+              <button type="button" class="ghost-action small" id="ws-copy-btn">Copy</button>
+            </div>
+            <div class="ws-restore">
+              <div class="ws-uuid-label">Restore from another device</div>
+              <input type="text" id="ws-restore-input" placeholder="paste a workspace UUID" />
+              <div class="conn-actions">
+                <button type="button" class="ghost-action small" id="ws-apply-btn">Switch workspace</button>
+              </div>
+              <div class="identity-status" id="ws-status"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /landing-content -->
+
+  </div><!-- /landing-wrap -->
+
+  <!-- ── About modal ───────────────────────────────────────────── -->
+  <div class="about-modal-backdrop" id="about-modal" hidden>
+    <div class="about-modal-box">
+      <div class="about-modal-head">
+        <span class="about-modal-title">About promptlibretto</span>
+        <button type="button" class="about-modal-close" id="about-close-btn">✕</button>
+      </div>
+      <div class="about-editorial">
+        <div class="about-masthead">
+          <div class="about-eyebrow">Instrument Manual · §1</div>
+          <h3 class="about-headline">Composable prompts.<br><em>Assembled.</em> Not concatenated.</h3>
+          <p class="about-deck">Named sections, runtime selections, and assembly order — the control room for everything your LLM receives.</p>
+        </div>
+        <div class="about-signal" id="about-diagram">
+          <span class="sig-node sig-node--amber" data-step="1">Sections</span>
+          <span class="sig-op" data-step="3">+</span>
+          <span class="sig-node sig-node--blue" data-step="3">Selections</span>
+          <span class="sig-op" data-step="4">+</span>
+          <span class="sig-node sig-node--warm" data-step="4">Runtime Modes</span>
+          <span class="sig-op" data-step="5">→</span>
+          <span class="sig-node sig-node--green" data-step="5">Final Prompt</span>
+          <span class="sig-break" data-step="6"></span>
+          <span class="sig-node sig-node--dim" data-step="6">Memory</span>
+          <span class="sig-node sig-node--dim" data-step="6">Classifier</span>
+          <span class="sig-node sig-node--dim" data-step="6">Embed</span>
+          <span class="sig-node sig-node--dim" data-step="7">Pre-Generate</span>
+          <span class="sig-node sig-node--dim" data-step="7">Export</span>
+          <span class="sig-node sig-node--dim" data-step="8">Builder</span>
+        </div>
+        <div class="about-slide-area" id="about-slides">
+          <div class="about-slide active" data-slide="0">
+            <h4>The Big Picture</h4>
+            <p>promptlibretto assembles prompts from composable pieces. Instead of one monolithic string, you define named <strong>sections</strong> — personas, sentiment, examples, injections — and an <strong>assembly_order</strong> that weaves them together.</p>
+            <div class="about-pull">"The prompt is not a string — it is a score, and the engine is the conductor."</div>
+            <p>Tune and test in Studio, then <strong>Export Model JSON</strong>. In your app:</p>
+            <pre>from promptlibretto import Registry, Engine
+
+reg = Registry.from_dict(json.load(open("support_bot.json")))
+eng = Engine(reg, provider=OllamaProvider())
+result = await eng.run(state={
+    "personas": {"selected": "empathetic"},
+})</pre>
+          </div>
+          <div class="about-slide" data-slide="1">
+            <h4>Registry &amp; Sections</h4>
+            <p>A <strong>registry</strong> is a JSON object containing named sections. Each section holds a list of <strong>items</strong>. The <code>assembly_order</code> is a list of tokens — like <code>personas.context</code> or <code>sentiment.groups</code> — that control what goes into the prompt and in what order.</p>
+            <p>Content sections: <code>base_context</code>, <code>personas</code>, <code>sentiment</code>, <code>static_injections</code>, <code>runtime_injections</code>, <code>output_prompt_directions</code>, <code>prompt_endings</code>.</p>
+            <p>Memory sections: <code>memory_recall</code> (injects retrieved context at runtime), <code>memory_rules</code> (classifier-triggered rule text), <code>memory_config</code> (embed and classifier endpoints and retrieval settings).</p>
+          </div>
+          <div class="about-slide" data-slide="2">
+            <h4>Selections</h4>
+            <p>At run time you <strong>select</strong> which item from each section to use. Required sections default to the first item; optional ones are skipped unless explicitly selected.</p>
+            <div class="about-pull">The <strong>section_random</strong> flag re-rolls the selection on every generate — useful for personas or sentiments that should vary across runs.</div>
+          </div>
+          <div class="about-slide" data-slide="3">
+            <h4>Runtime Modes, Template Vars &amp; Fragments</h4>
+            <p>List fields inside an item (groups, examples, directives) have per-array <strong>runtime modes</strong>: <code>all</code>, <code>none</code>, <code>index:N</code>, or <code>random:K</code>.</p>
+            <p><strong>Template vars</strong> fill <code>{placeholders}</code> in section text. Define them on a section item and set values at runtime — in Studio, in your app state, or via the memory layer.</p>
+            <p><strong>Conditional fragments</strong> extend <code>base_context</code> items. Each fragment has an <code>if_var</code> condition and a text block — it only renders when that variable has a value at assembly time. This means optional context (sub-location, active item, current quest) slots cleanly into the prompt without leaving broken sentences when the data isn't there.</p>
+          </div>
+          <div class="about-slide" data-slide="4">
+            <h4>Generation &amp; Output Policy</h4>
+            <p>Each registry carries a <strong>generation</strong> block (temperature, top_p, max_tokens, retries…) and an optional <strong>output_policy</strong> (length caps, forbidden substrings, required patterns, prefix stripping).</p>
+            <p>The engine assembles the prompt, calls your local model, then validates the response against the policy. If validation fails and <code>retries &gt; 0</code> it tries again.</p>
+          </div>
+          <div class="about-slide" data-slide="5">
+            <h4>Memory, Classifier &amp; Embedding</h4>
+            <p>The memory layer gives an agent continuity across turns. The <code>memory_recall</code> section holds a template-var placeholder — at runtime the engine fills it with semantically relevant prior conversation retrieved by the embed model.</p>
+            <p>The <strong>classifier</strong> watches each incoming message for known patterns. Each rule in <code>memory_rules</code> has a tag and a description — when the classifier fires a tag, its rule text is injected into the prompt automatically, guiding the model without hardcoding that guidance into every response.</p>
+            <p><code>memory_config</code> wires it together: embed and classifier base URLs, models, and <code>top_k</code> — how many recalled memories are pulled into each prompt. Configure both in the <strong>Connection Configuration</strong> panel on the home page.</p>
+          </div>
+          <div class="about-slide" data-slide="6">
+            <h4>Pre-Generate &amp; Export</h4>
+            <p><strong>Pre-Generate</strong> (Studio) resolves and displays the assembled prompt before any LLM call — inspect it, then hit Generate.</p>
+            <p><strong>Export Model JSON</strong> bakes in your current selections, modes, sliders, and generation overrides. Load it back in your app with <code>Registry.from_dict()</code>.</p>
+          </div>
+          <div class="about-slide" data-slide="7">
+            <h4>Builder</h4>
+            <p>The <strong>Builder</strong> page (<a href="/builder">/builder</a>) is a visual form for constructing a registry from scratch — no JSON editing required.</p>
+            <p>Add sections, fill in items, set assembly order, configure generation and output policy, then hit <strong>Open in Studio</strong> to start tuning immediately.</p>
+          </div>
+        </div>
+        <div class="about-nav">
+          <button type="button" class="ghost-action small" id="about-prev" disabled>← Prev</button>
+          <div class="about-dots" id="about-dots"></div>
+          <button type="button" class="ghost-action small" id="about-next">Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/static/landing.js"></script>
+</body>
+</html>

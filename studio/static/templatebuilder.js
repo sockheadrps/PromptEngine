@@ -206,10 +206,14 @@ function buildExportPayload() {
       if (out.scale) {
         if (!out.scale.scale_descriptor && !out.scale.template) delete out.scale;
       }
+      // Strip empty fragments array on base_context items
+      if (key === "base_context" && Array.isArray(out.fragments) && !out.fragments.length) {
+        delete out.fragments;
+      }
       // Strip empty pre_context on groups items
       if (key === "groups" && !out.pre_context) delete out.pre_context;
-      // Strip empty groups arrays on personas/sentiment
-      if ((key === "personas" || key === "sentiment") && Array.isArray(out.groups) && !out.groups.length) {
+      // Strip empty groups arrays on personas/sentiment/static_injections
+      if ((key === "personas" || key === "sentiment" || key === "static_injections") && Array.isArray(out.groups) && !out.groups.length) {
         delete out.groups;
       }
       // Strip empty template_vars arrays and legacy fields on runtime_injections
@@ -300,6 +304,18 @@ function renderFlowView() {
   container.innerHTML = blocks.join("");
 }
 
+function resolveBaseContextText(item) {
+  const base = item.text || item.context || "";
+  if (!Array.isArray(item.fragments) || !item.fragments.length) return base;
+  const fragLines = item.fragments
+    .filter((f) => f.text)
+    .map((f) => {
+      const cond = f.condition || f.if_var || f.var || "";
+      return cond ? `[if {${cond}}] ${f.text}` : f.text;
+    });
+  return [base, ...fragLines].filter(Boolean).join("\n\n");
+}
+
 function resolvePreviewToken(token) {
   const ALIAS = {};
 
@@ -367,6 +383,7 @@ function resolvePreviewToken(token) {
     if (Array.isArray(item.items) && item.items.length) {
       return item.items.map((x) => `- ${x}`).join("\n");
     }
+    if (secKey === "base_context") return resolveBaseContextText(item);
     return item.text || item.context || "";
   }
 
@@ -376,6 +393,7 @@ function resolvePreviewToken(token) {
   const namedItem = sec.items.find((it) => (it.id || it.name) === sub);
   const resolveItem = namedItem || (secKey === "prompt_endings" ? sec.items[0] : null);
   if (resolveItem) {
+    if (secKey === "base_context") return resolveBaseContextText(resolveItem);
     const hasSubItems = Array.isArray(resolveItem.items) && resolveItem.items.length;
     const itemText = typeof resolveItem.text === "string" && resolveItem.text.trim() ? resolveItem.text : "";
     if (hasSubItems) {
@@ -387,6 +405,7 @@ function resolvePreviewToken(token) {
   }
 
   // Field on selected item (e.g. personas.context, sentiment.context)
+  if (secKey === "base_context" && sub === "text") return resolveBaseContextText(item);
   const val = item[sub];
   if (Array.isArray(val)) return val.map((x) => `- ${x}`).join("\n");
   if (typeof val === "string") return val;
@@ -760,14 +779,74 @@ function addEntry(type) {
     entry.name = "endings";
     entry.text = "";
     entry.items = [];
+  } else if (type === "static_injections") {
+    entry.id = "";
+    entry.text = "";
+    entry.groups = [];
+  } else if (type === "base_context") {
+    entry.id = "";
+    entry.text = "";
+    entry.fragments = [];
   } else {
-    // base_context, static_injections, output_prompt_directions
+    // output_prompt_directions etc
     entry.id = "";
     entry.text = "";
   }
   registryState.sections[type].items.push(entry);
   renderItems(type);
   renderAssemblyOrderEditor();
+  exportFullModel();
+}
+
+function renderFragmentsEditor(type, uiId, fragments) {
+  const tvars = registryState.sections[type].template_vars || [];
+  const hint = tvars.length
+    ? `fires conditionally — uses ${tvars.map((v) => `{${v}}`).join(", ")}`
+    : "add template vars to this section to use conditions";
+  const rows = (fragments || []).map((frag, i) => {
+    const condition = frag.condition || frag.if_var || frag.var || "";
+    const text = frag.text || "";
+    const opts = [`<option value="">always</option>`]
+      .concat(tvars.map((v) =>
+        `<option value="${escapeHtml(v)}"${condition === v ? " selected" : ""}>if {${escapeHtml(v)}}</option>`
+      ))
+      .join("");
+    return `<div class="frag-row">
+      <div class="frag-row-head">
+        <select onchange="updateFragment('${type}', ${uiId}, ${i}, 'condition', this.value)">${opts}</select>
+        <button type="button" class="frag-remove-btn" onclick="removeFragment('${type}', ${uiId}, ${i})" title="Remove">×</button>
+      </div>
+      <textarea rows="2" placeholder="fragment text — use {var}…" oninput="updateFragment('${type}', ${uiId}, ${i}, 'text', this.value)">${escapeHtml(text)}</textarea>
+    </div>`;
+  }).join("");
+  return `<div class="frag-section">
+    <label>Conditional fragments <span class="label-hint">${hint}</span></label>
+    <div class="frag-list">${rows}</div>
+    <button type="button" class="btn-add-inline" onclick="addFragment('${type}', ${uiId})">+ Fragment</button>
+  </div>`;
+}
+
+function addFragment(type, uiId) {
+  const entry = registryState.sections[type].items.find((e) => e._ui_id === uiId);
+  if (!entry) return;
+  if (!Array.isArray(entry.fragments)) entry.fragments = [];
+  entry.fragments.push({ condition: "", text: "" });
+  renderItems(type);
+  exportFullModel();
+}
+
+function removeFragment(type, uiId, fragIndex) {
+  const entry = registryState.sections[type].items.find((e) => e._ui_id === uiId);
+  if (!entry || !Array.isArray(entry.fragments)) return;
+  entry.fragments.splice(fragIndex, 1);
+  renderItems(type);
+  exportFullModel();
+}
+
+function updateFragment(type, uiId, fragIndex, field, value) {
+  const entry = registryState.sections[type].items.find((e) => e._ui_id === uiId);
+  if (!entry || !Array.isArray(entry.fragments) || !entry.fragments[fragIndex]) return;
+  entry.fragments[fragIndex][field] = value;
   exportFullModel();
 }
 
@@ -1045,14 +1124,29 @@ function renderItems(type) {
         <label>Text <span class="label-hint">use <code>{user_input}</code> for the message; add <code>{other_name}</code> or other vars as needed</span></label>
         <textarea oninput="updateField('${type}', ${entry._ui_id}, 'text', this.value)">${escapeHtml(entry.text || "")}</textarea>
       `;
+    } else if (type === "static_injections") {
+      html = `
+        <label>ID</label>
+        <input type="text" value="${escapeHtml(entry.id || "")}" oninput="updateField('${type}', ${entry._ui_id}, 'id', this.value)" class="mb-2">
+        <label>Text</label>
+        <textarea oninput="updateField('${type}', ${entry._ui_id}, 'text', this.value)" class="mb-2">${escapeHtml(entry.text || "")}</textarea>
+        <label class="mt-2">Groups <span class="label-hint">optional — attach reusable snippet lists to this injection</span></label>
+        ${renderInlineGroups(type, entry._ui_id, entry.groups || [])}
+      `;
+    } else if (type === "base_context") {
+      html = `
+        <label>ID</label>
+        <input type="text" value="${escapeHtml(entry.id || "")}" oninput="updateField('${type}', ${entry._ui_id}, 'id', this.value)" class="mb-2">
+        <label>Text <span class="label-hint">always-rendered framing text — use {var} for template vars</span></label>
+        <textarea oninput="updateField('${type}', ${entry._ui_id}, 'text', this.value)" class="mb-2">${escapeHtml(entry.text || "")}</textarea>
+        ${renderFragmentsEditor(type, entry._ui_id, entry.fragments || [])}
+      `;
     } else {
-      const memTagRow = "";
       html = `
         <label>ID</label>
         <input type="text" value="${escapeHtml(entry.id || entry.name || "")}" oninput="updateField('${type}', ${entry._ui_id}, 'id', this.value)" class="mb-2">
         <label>Text</label>
         <textarea oninput="updateField('${type}', ${entry._ui_id}, 'text', this.value)">${escapeHtml(entry.text || "")}</textarea>
-        ${memTagRow}
       `;
     }
 
@@ -1286,9 +1380,10 @@ function openInStudio() {
 
 async function copyToClipboard() {
   const text = document.getElementById("output-json").textContent;
+  const btn = document.getElementById("preview-action-copy");
   try {
     await navigator.clipboard.writeText(text);
-    document.getElementById("copy-btn").textContent = "COPIED!";
+    if (btn) btn.textContent = "Copied!";
   } catch {
     const textArea = document.createElement("textarea");
     textArea.value = text;
@@ -1296,10 +1391,10 @@ async function copyToClipboard() {
     textArea.select();
     document.execCommand("copy");
     document.body.removeChild(textArea);
-    document.getElementById("copy-btn").textContent = "COPIED!";
+    if (btn) btn.textContent = "Copied!";
   }
   setTimeout(() => {
-    document.getElementById("copy-btn").textContent = "Copy JSON";
+    if (btn) btn.textContent = "Copy JSON";
   }, 1000);
 }
 
@@ -1487,7 +1582,7 @@ const SECTION_INFO = {
   static_injections: {
     title: "Static Injections",
     body: "Fixed text blocks inserted in assembly order. Useful for boilerplate rules or safety content. Each injection is optional — include it in the assembly order to activate it, leave it out to skip it.",
-    fields: ["id — identifier", "text — the injected content"],
+    fields: ["id — identifier", "text — the injected content", "groups — optional reusable snippet lists (same format as on personas/sentiment)"],
   },
   runtime_injections: {
     title: "Runtime Injections",
@@ -1997,6 +2092,12 @@ function deleteSavedRegistry(name) {
 
 function handlePickerChange(value) {
   if (!value) return;
+  if (value === "__import__") {
+    const sel = document.getElementById("example-picker");
+    if (sel) sel.value = "";
+    importModel();
+    return;
+  }
   if (value.startsWith("__saved__:")) {
     loadSavedRegistry(value.slice("__saved__:".length));
   } else {
@@ -2037,7 +2138,7 @@ async function populateExamplePicker() {
       `</optgroup>`;
   }
 
-  sel.innerHTML = `<option value="">Load…</option>` + exampleOptions + savedOptions;
+  sel.innerHTML = `<option value="">Load…</option><option value="__import__">Load from JSON…</option>` + exampleOptions + savedOptions;
 }
 
 consumeStudioHandoff();

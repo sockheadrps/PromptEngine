@@ -172,14 +172,9 @@ header h1 {
 
 .header-nav-btn:hover {
   color: var(--text);
-  background: rgba(212, 145, 92, 0.08);
+  background: rgba(201, 139, 64, 0.08);
 }
 
-.header-nav-accent {
-  color: var(--accent);
-  background: rgba(212, 145, 92, 0.08);
-  border: 1px solid rgba(212, 145, 92, 0.2);
-}
 
 .builder-shell {
   width: min(1600px, calc(100vw - 32px));
@@ -223,7 +218,8 @@ header h1 {
 }
 
 .primary-btn.compact {
-  padding: 8px 12px;
+  padding: 6px 10px;
+  font-size: 11px;
 }
 
 .primary-btn {
@@ -617,7 +613,7 @@ header h1 {
 .panel-head {
   display: flex;
   justify-content: space-between;
-  align-items: start;
+  align-items: center;
   gap: 16px;
   margin-bottom: 12px;
 }
@@ -2274,9 +2270,10 @@ details[open] > .inline-group-summary::before {
   background: linear-gradient(180deg, #dba060, #c08338);
   color: #0b0805;
   border-radius: 7px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
+  padding: 7px 14px;
   box-shadow: 0 0 0 1px rgba(201, 139, 64, 0.3) inset, 0 2px 8px rgba(0, 0, 0, 0.2);
   transition: filter 140ms ease, transform 120ms ease;
 }
@@ -2285,6 +2282,13 @@ details[open] > .inline-group-summary::before {
   filter: brightness(1.06);
   transform: translateY(-1px);
   box-shadow: 0 0 0 1px rgba(201, 139, 64, 0.4) inset, 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+/* Preview panel action buttons — uniform fixed width, no size variation */
+.preview-actions .primary-btn {
+  min-width: 110px;
+  text-align: center;
+  padding: 6px 10px;
 }
 
 .ghost-btn {
@@ -2865,4 +2869,88 @@ header::after {
 
 .btn-delete:hover {
   opacity: 1;
+}
+
+/* Load picker select — dark theme for closed state and native dropdown */
+select.header-nav-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a6e5e'/%3E%3C/svg%3E") no-repeat right 10px center;
+  padding-right: 28px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+select.header-nav-btn:focus {
+  outline: none;
+  background-color: rgba(201, 139, 64, 0.06);
+  color: var(--text);
+}
+
+select.header-nav-btn option {
+  background: #1a1510;
+  color: #eee8de;
+}
+
+/* ── Fragments editor (base_context) ─────────────────────── */
+
+.frag-section {
+  margin-top: 14px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.frag-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.frag-row {
+  background: rgba(141, 176, 204, 0.04);
+  border: 1px solid rgba(141, 176, 204, 0.13);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.frag-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.frag-row-head select {
+  flex: 1;
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+.frag-row textarea {
+  font-size: 12px;
+  resize: vertical;
+  min-height: 52px;
+}
+
+.frag-remove-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--muted-soft);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.12s;
+}
+
+.frag-remove-btn:hover {
+  color: var(--accent-rose);
 }

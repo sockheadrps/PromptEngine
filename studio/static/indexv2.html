@@ -14,6 +14,7 @@
     <div class="header-brand">
       <h1>promptlibretto</h1>
       <nav class="header-page-nav">
+        <a href="/" class="header-page-link">Home</a>
         <a href="/builder" class="header-page-link">Builder</a>
         <span class="header-page-link active">Studio</span>
         <a href="/ensemble" class="header-page-link">Ensemble</a>
@@ -26,8 +27,7 @@
       </span>
     </div>
     <div class="header-meta">
-      <button id="about-btn" type="button" class="header-nav-btn">About</button>
-      <button id="example-btn" type="button" class="header-nav-btn header-nav-accent">View Examples</button>
+<button id="example-btn" type="button" class="header-nav-btn header-nav-accent">View Examples</button>
       <button id="example-save-btn" type="button" class="header-nav-btn" hidden>Save Example</button>
       <span class="header-nav-sep"></span>
       <div id="connection-slot"></div>
@@ -144,22 +144,30 @@
 
         <fieldset class="field" id="memory-config-fieldset" hidden>
           <legend class="field-label">Memory Config</legend>
-          <div class="grid-2">
-            <label><span>classifier_url</span><input id="studio-mem-classifier-url" type="text" placeholder="http://localhost:11434" /></label>
-            <label class="mem-model-label">
-              <span>classifier_model</span>
-              <div class="mem-model-row">
-                <input id="studio-mem-classifier-model" type="text" placeholder="llama3.2:1b" />
-                <button id="studio-mem-fetch-btn" type="button" class="ghost small" title="Fetch available models from classifier_url">↺</button>
-              </div>
-            </label>
-            <label class="mem-embed-toggle-label"><input type="checkbox" id="studio-mem-use-embed-url" /> <span>Use Additional Embedding URL? <span class="label-hint">if unchecked, uses classifier_url</span></span><button type="button" class="help" data-help="embedding">?</button></label>
-            <div id="studio-mem-embed-url-section" hidden>
-              <label><span>embed_url</span><input id="studio-mem-embed-url" type="text" placeholder="http://localhost:11434" /></label>
+          <div class="mem-endpoint-group">
+            <div class="mem-endpoint-header">
+              <span class="mem-endpoint-label">Classifier</span>
+              <span id="mem-clf-status" class="mem-model-status"></span>
             </div>
-            <label><span>embed_model</span><input id="studio-mem-embed-model" type="text" placeholder="nomic-embed-text" /></label>
+            <input id="studio-mem-classifier-url" type="text" placeholder="http://localhost:11434" />
+            <select id="studio-mem-classifier-model">
+              <option value="">— enter URL above —</option>
+            </select>
+          </div>
+          <div class="mem-endpoint-group">
+            <div class="mem-endpoint-header">
+              <span class="mem-endpoint-label">Embedder</span>
+              <label class="mem-sep-url-label"><input type="checkbox" id="studio-mem-use-embed-url" /><span class="label-hint">separate URL</span></label>
+              <span id="mem-emb-status" class="mem-model-status"></span>
+            </div>
+            <input id="studio-mem-embed-url" type="text" placeholder="http://localhost:11434" hidden />
+            <select id="studio-mem-embed-model">
+              <option value="">— enter URL above —</option>
+            </select>
+          </div>
+          <div class="grid-2" style="margin-top:8px">
             <label><span>top_k</span><input id="studio-mem-top-k" type="number" min="1" step="1" placeholder="5" /></label>
-            <label><span>prune_keep</span><input id="studio-mem-prune-keep" type="number" min="1" step="1" max="10" placeholder="10" /></label>
+            <label><span>prune_keep</span><input id="studio-mem-prune-keep" type="number" min="1" step="1" placeholder="10" /></label>
           </div>
         </fieldset>
       </div>
@@ -564,109 +572,6 @@
       </div>
     </div>
   </div>
-
-  <div id="about-modal" class="modal" hidden>
-      <div class="modal-backdrop" data-close-about></div>
-      <div class="modal-card modal-card--tour" role="dialog" aria-modal="true" aria-labelledby="about-title">
-        <header>
-          <h3 id="about-title">How promptlibretto works</h3>
-          <button class="modal-close" type="button" data-close-about aria-label="Close">×</button>
-        </header>
-        <div class="modal-body about-slideshow">
-          <div class="slide-diagram">
-            <span class="sd-box sd-base" data-step="1">Sections</span>
-            <span class="sd-plus" data-step="2">+</span>
-            <span class="sd-box sd-route" data-step="2">Selections</span>
-            <span class="sd-plus" data-step="3">+</span>
-            <span class="sd-box sd-overlay" data-step="3">Runtime Modes</span>
-            <span class="sd-arrow" data-step="4">→</span>
-            <span class="sd-box sd-out" data-step="4">Final Prompt</span>
-            <span class="sd-sep" data-step="5"></span>
-            <span class="sd-box sd-secondary" data-step="5">Pre-Generate</span>
-            <span class="sd-box sd-secondary" data-step="5">Export</span>
-            <span class="sd-box sd-secondary" data-step="6">Builder</span>
-          </div>
-
-          <div class="about-columns">
-            <!-- Left: slide text -->
-            <div class="about-content">
-              <div class="about-slide active" data-slide="0">
-                <h4>The Big Picture</h4>
-                <p>promptlibretto assembles prompts from composable pieces. Instead of one monolithic string, you define named <strong>sections</strong> — personas, sentiment, examples, injections — and an <strong>assembly_order</strong> that weaves them together.</p>
-                <p>Tune and test in the studio, then <strong>Export Model JSON</strong>. In your app, one call loads the whole thing:</p>
-                <pre class="about-code">from promptlibretto import load_registry
-
-eng = load_registry("support_bot.json")
-result = await eng.run(state={
-    "selections": {"personas": "empathetic"},
-})</pre>
-                <p>Step through to see each layer build the prompt on the right →</p>
-              </div>
-
-              <div class="about-slide" data-slide="1">
-                <h4>Registry &amp; Sections</h4>
-                <p>A <strong>registry</strong> is a JSON object containing named sections. Each section holds a list of <strong>items</strong>. The <code>assembly_order</code> is a list of dot-notation tokens — like <code>persona.context</code> or <code>sentiment.nudges</code> — that control what goes into the prompt and in what order.</p>
-                <p>Built-in section types: <code>base_context</code>, <code>personas</code>, <code>sentiment</code>, <code>static_injections</code>, <code>runtime_injections</code>, <code>output_prompt_directions</code>, <code>examples</code>, <code>prompt_endings</code>.</p>
-              </div>
-
-              <div class="about-slide" data-slide="2">
-                <h4>Selections</h4>
-                <p>At run time you <strong>select</strong> which item from each section to use. Required sections default to the first item; optional ones are skipped unless explicitly selected.</p>
-                <p>The <strong>Random</strong> toggle re-rolls the selection on every generate — useful for personas or sentiment that should vary across runs.</p>
-              </div>
-
-              <div class="about-slide" data-slide="3">
-                <h4>Runtime Modes &amp; Template Vars</h4>
-                <p>List fields inside an item (nudges, examples, directives) have per-array <strong>runtime modes</strong>: <code>all</code>, <code>none</code>, <code>index:N</code>, or <code>random:K</code>. Use <code>random:1</code> to pick a single nudge each run.</p>
-                <p><strong>Template vars</strong> fill <code>{placeholders}</code> in section text. <strong>Conditional fragments</strong> on <code>base_context</code> items only render when their variable has a value — so an unfilled <code>{sublocation}</code> never leaves a broken sentence.</p>
-              </div>
-
-              <div class="about-slide" data-slide="4">
-                <h4>Generation &amp; Output Policy</h4>
-                <p>Each registry carries a <strong>generation</strong> block (temperature, top_p, max_tokens, retries, …) and an optional <strong>output_policy</strong> (length caps, forbidden substrings, required patterns, prefix stripping).</p>
-                <p>When you hit <strong>Generate</strong>, the engine assembles the prompt, calls your local model browser-direct, then validates the response against the policy. If validation fails and <code>retries &gt; 0</code> it tries again. The <strong>Debug Trace</strong> panel shows the exact prompt, response, and resolved config for every attempt.</p>
-              </div>
-
-              <div class="about-slide" data-slide="5">
-                <h4>Pre-Generate &amp; Export</h4>
-                <p><strong>Pre-Generate</strong> resolves and displays the assembled prompt before any LLM call — inspect it, then hit Generate.</p>
-                <p><strong>Export Model JSON</strong> copies the full registry with your current selections, modes, sliders, and generation overrides baked in. Load it back in your app:</p>
-                <pre class="about-code">eng = load_registry("support_bot.json")
-result = await eng.run(state=...)</pre>
-              </div>
-
-              <div class="about-slide" data-slide="6">
-                <h4>Builder</h4>
-                <p>The <strong>Builder</strong> page (<a href="/builder" style="color:inherit">/builder</a>) is a visual form for constructing a registry from scratch — no JSON editing required.</p>
-                <p>Add sections, fill in items, drag-and-drop the assembly order, set generation and output policy, then hit <strong>Open in Studio</strong> to start tuning immediately.</p>
-              </div>
-            </div>
-
-            <!-- Right: progressive prompt preview -->
-            <div class="tour-prompt">
-              <div class="tour-prompt-title">Prompt Preview</div>
-              <div class="tour-prompt-scroll">
-                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-base">output_prompt_directions</div><div class="tour-block-text">Reply in plain prose. Keep it under 100 words.</div></div>
-                <div class="tour-block" data-show-at="1"><div class="tour-block-label sd-base">base_context</div><div class="tour-block-text">You are a support agent for Acme Cloud. The customer is on the Pro plan.</div></div>
-                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-route">persona.context</div><div class="tour-block-text">You acknowledge frustration before solving.</div></div>
-                <div class="tour-block" data-show-at="2"><div class="tour-block-label sd-route">persona.base_directives</div><div class="tour-block-text">Open with a brief empathy line. Then give the solution clearly. Close by offering to follow up.</div></div>
-                <div class="tour-block" data-show-at="3"><div class="tour-block-label sd-overlay">sentiment.context</div><div class="tour-block-text">The customer is clearly frustrated.</div></div>
-                <div class="tour-block" data-show-at="3"><div class="tour-block-label sd-overlay">sentiment.nudges <span class="tour-runtime-tag">random:1</span></div><div class="tour-block-text">Be concise — they don't want a wall of text.</div></div>
-                <div class="tour-block-divider" data-show-at="4">── prompt ending ──</div>
-                <div class="tour-block tour-block--output" data-show-at="4"><div class="tour-block-label sd-out">model response</div><div class="tour-block-text">I'm sorry you're running into this. Go to Settings › Account › Reset — takes about 30 seconds. Reply here if it doesn't resolve it and I'll dig further.</div></div>
-                <div class="tour-prompt-empty" data-hide-at="1">Step through the slides to watch the prompt build up layer by layer.</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="about-nav">
-            <button id="about-prev" type="button" class="ghost" disabled>← Prev</button>
-            <div class="about-dots"></div>
-            <button id="about-next" type="button" class="ghost">Next →</button>
-          </div>
-        </div>
-      </div>
-    </div>
 
   <script type="module" src="/static/appv2.js"></script>
 </body>

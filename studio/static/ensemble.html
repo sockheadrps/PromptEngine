@@ -15,8 +15,9 @@
   <div class="header-brand">
     <h1>promptlibretto</h1>
     <nav class="header-page-nav">
+      <a href="/" class="header-page-link">Home</a>
       <a href="/builder" class="header-page-link">Builder</a>
-      <a href="/" class="header-page-link">Studio</a>
+      <a href="/studio" class="header-page-link">Studio</a>
       <span class="header-page-link active">Ensemble</span>
     </nav>
   </div>
@@ -38,6 +39,10 @@
         <span class="pcard-meta" id="a-summary-meta">— configure —</span>
         <span class="pcard-chips" id="a-summary-chips"></span>
         <span class="pcard-spacer"></span>
+        <label class="summary-human-toggle" onclick="event.stopPropagation()">
+          <input type="checkbox" id="a-human" />
+          <span>Human</span>
+        </label>
         <span class="pcard-toggle">▾</span>
       </summary>
       <div class="pcard-body">
@@ -54,7 +59,6 @@
           </label>
         </div>
         <div class="pcard-row pcard-toggles">
-          <label class="inline-toggle"><input type="checkbox" id="a-human" /><span>Human-driven</span></label>
           <label class="inline-toggle model-only"><input type="checkbox" id="a-memory" checked /><span>Memory pipeline</span></label>
           <span class="pcard-sep"></span>
           <button type="button" class="btn-view-store model-only" onclick="viewStore('a')">View memory</button>
@@ -63,11 +67,11 @@
         </div>
         <div class="pcard-row pcard-tts-row">
           <label class="inline-toggle"><input type="checkbox" id="a-tts" /><span>Speak responses (TTS)</span></label>
-          <label class="pfield pcard-tts-voice">
+          <label class="pfield pcard-tts-voice tts-detail">
             <span>voice</span>
             <select id="a-tts-voice"><option value="">— default —</option></select>
           </label>
-          <label class="pfield pcard-tts-speed">
+          <label class="pfield pcard-tts-speed tts-detail">
             <span>speed <span id="a-tts-speed-val">1.0</span>×</span>
             <input type="range" id="a-tts-speed" min="0.5" max="2.5" step="0.1" value="1.0"
               oninput="document.getElementById('a-tts-speed-val').textContent=parseFloat(this.value).toFixed(1)" />
@@ -82,9 +86,16 @@
             <label class="pfield"><span>max_tokens</span><input type="number" step="10" min="50" id="a-gen-max_tokens" placeholder="500" /></label>
             <label class="pfield"><span>repeat_penalty</span><input type="number" step="0.05" min="0" max="2" id="a-gen-repeat_penalty" placeholder="1.1" /></label>
             <label class="pfield"><span>retries</span><input type="number" step="1" min="0" max="5" id="a-gen-retries" placeholder="1" /></label>
+            <label class="pfield pfield-inline"><span>Section randomize</span>
+              <select id="a-section-random-mode">
+                <option value="off">off</option>
+                <option value="once">once on start</option>
+                <option value="per-message">per message</option>
+              </select>
+            </label>
           </div>
         </details>
-        <details class="pcard-tuning model-only">
+        <details class="pcard-tuning model-only memory-only">
           <summary>Memory tuning <span class="muted small">— history window, working notes</span></summary>
           <div class="pcard-tuning-grid">
             <label class="pfield"><span>history_window</span><input type="number" min="0" step="1" id="a-history_window" placeholder="6" /></label>
@@ -99,7 +110,7 @@
             <label class="pfield pfield-wide"><span>embed_path</span><input type="text" id="a-embed_path" placeholder="/api/embed  (Ollama)  or  /v1/embeddings  (llama.cpp / LM Studio)" /></label>
           </div>
         </details>
-        <details class="pcard-tuning model-only">
+        <details class="pcard-tuning model-only memory-only">
           <summary>Notes prompts <span class="muted small">— what each section should track</span></summary>
           <div class="pcard-notes-grid">
             <label class="pfield">
@@ -127,6 +138,10 @@
         <span class="pcard-meta" id="b-summary-meta">— configure —</span>
         <span class="pcard-chips" id="b-summary-chips"></span>
         <span class="pcard-spacer"></span>
+        <label class="summary-human-toggle" onclick="event.stopPropagation()">
+          <input type="checkbox" id="b-human" />
+          <span>Human</span>
+        </label>
         <span class="pcard-toggle">▾</span>
       </summary>
       <div class="pcard-body">
@@ -143,7 +158,6 @@
           </label>
         </div>
         <div class="pcard-row pcard-toggles">
-          <label class="inline-toggle"><input type="checkbox" id="b-human" /><span>Human-driven</span></label>
           <label class="inline-toggle model-only"><input type="checkbox" id="b-memory" checked /><span>Memory pipeline</span></label>
           <span class="pcard-sep"></span>
           <button type="button" class="btn-view-store model-only" onclick="viewStore('b')">View memory</button>
@@ -152,11 +166,11 @@
         </div>
         <div class="pcard-row pcard-tts-row">
           <label class="inline-toggle"><input type="checkbox" id="b-tts" /><span>Speak responses (TTS)</span></label>
-          <label class="pfield pcard-tts-voice">
+          <label class="pfield pcard-tts-voice tts-detail">
             <span>voice</span>
             <select id="b-tts-voice"><option value="">— default —</option></select>
           </label>
-          <label class="pfield pcard-tts-speed">
+          <label class="pfield pcard-tts-speed tts-detail">
             <span>speed <span id="b-tts-speed-val">1.0</span>×</span>
             <input type="range" id="b-tts-speed" min="0.5" max="2.5" step="0.1" value="1.0"
               oninput="document.getElementById('b-tts-speed-val').textContent=parseFloat(this.value).toFixed(1)" />
@@ -171,9 +185,16 @@
             <label class="pfield"><span>max_tokens</span><input type="number" step="10" min="50" id="b-gen-max_tokens" placeholder="500" /></label>
             <label class="pfield"><span>repeat_penalty</span><input type="number" step="0.05" min="0" max="2" id="b-gen-repeat_penalty" placeholder="1.1" /></label>
             <label class="pfield"><span>retries</span><input type="number" step="1" min="0" max="5" id="b-gen-retries" placeholder="1" /></label>
+            <label class="pfield pfield-inline"><span>Section randomize</span>
+              <select id="b-section-random-mode">
+                <option value="off">off</option>
+                <option value="once">once on start</option>
+                <option value="per-message">per message</option>
+              </select>
+            </label>
           </div>
         </details>
-        <details class="pcard-tuning model-only">
+        <details class="pcard-tuning model-only memory-only">
           <summary>Memory tuning <span class="muted small">— history window, working notes</span></summary>
           <div class="pcard-tuning-grid">
             <label class="pfield"><span>history_window</span><input type="number" min="0" step="1" id="b-history_window" placeholder="6" /></label>
@@ -188,7 +209,7 @@
             <label class="pfield pfield-wide"><span>embed_path</span><input type="text" id="b-embed_path" placeholder="/api/embed  (Ollama)  or  /v1/embeddings  (llama.cpp / LM Studio)" /></label>
           </div>
         </details>
-        <details class="pcard-tuning model-only">
+        <details class="pcard-tuning model-only memory-only">
           <summary>Notes prompts <span class="muted small">— what each section should track</span></summary>
           <div class="pcard-notes-grid">
             <label class="pfield">

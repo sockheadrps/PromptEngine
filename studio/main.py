@@ -10,9 +10,11 @@ from __future__ import annotations
 import uuid as _uuid_mod
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request as StarletteRequest
 
@@ -53,8 +55,13 @@ if _static_dir.exists():
 
 
 @app.get("/")
-@app.get("/v21")  # legacy bookmark — redirect-equivalent
-def index() -> FileResponse:
+def landing() -> FileResponse:
+    return FileResponse(_static_dir / "index.html")
+
+
+@app.get("/studio")
+@app.get("/v21")  # legacy bookmark
+def studio_page() -> FileResponse:
     return FileResponse(_static_dir / "indexv2.html")
 
 
@@ -76,3 +83,57 @@ def config() -> JSONResponse:
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+class _TestConnRequest(BaseModel):
+    baseUrl: str
+    model: str
+    apiKey: str = ""
+
+
+@app.post("/api/test-embed")
+async def test_embed(req: _TestConnRequest) -> JSONResponse:
+    base = req.baseUrl.rstrip("/")
+    headers = {"Authorization": f"Bearer {req.apiKey}"} if req.apiKey else {}
+    payload = {"model": req.model, "input": "test"}
+    paths = ["/api/embed", "/v1/embeddings"]
+    async with httpx.AsyncClient() as client:
+        for path in paths:
+            try:
+                resp = await client.post(f"{base}{path}", json=payload, headers=headers, timeout=15.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    dim: int | None = None
+                    if isinstance(data.get("data"), list) and data["data"]:
+                        emb = data["data"][0].get("embedding", [])
+                        dim = len(emb) if emb else None
+                    elif "embeddings" in data:
+                        embs = data["embeddings"]
+                        if embs and isinstance(embs[0], list):
+                            dim = len(embs[0])
+                    elif "embedding" in data:
+                        dim = len(data["embedding"])
+                    msg = f"OK — {dim}-dim vector." if dim else "OK."
+                    return JSONResponse({"ok": True, "message": msg})
+            except Exception:
+                continue
+    return JSONResponse({"ok": False, "message": "Could not reach embed endpoint."})
+
+
+@app.post("/api/test-classifier")
+async def test_classifier(req: _TestConnRequest) -> JSONResponse:
+    base = req.baseUrl.rstrip("/")
+    headers = {"Authorization": f"Bearer {req.apiKey}"} if req.apiKey else {}
+    paths = [
+        ("/api/chat",               {"model": req.model, "messages": [{"role": "user", "content": "ping"}], "stream": False, "options": {"num_predict": 1}}),
+        ("/v1/chat/completions",    {"model": req.model, "messages": [{"role": "user", "content": "ping"}], "max_tokens": 1}),
+    ]
+    async with httpx.AsyncClient() as client:
+        for path, payload in paths:
+            try:
+                resp = await client.post(f"{base}{path}", json=payload, headers=headers, timeout=30.0)
+                if resp.status_code == 200:
+                    return JSONResponse({"ok": True, "message": f"OK ({req.model})."})
+            except Exception:
+                continue
+    return JSONResponse({"ok": False, "message": "Could not reach classifier endpoint."})

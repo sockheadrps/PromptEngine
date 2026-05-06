@@ -1399,8 +1399,50 @@ textarea {
 }
 .turn-bubble.bubble-blurred:hover { filter: blur(2px); }
 
-/* ── hide model fields when human-driven ────────────────── */
+/* ── hide model fields when human-driven ──────────────���─── */
 .pcard.is-human .model-only { display: none !important; }
+
+/* ── hide memory-specific panels when memory is off ─────── */
+.pcard.is-no-memory .memory-only { display: none !important; }
+
+/* ── hide TTS voice/speed when TTS is off ───────────────── */
+.pcard.is-no-tts .tts-detail { display: none !important; }
+
+/* ── human toggle in summary header ─────────────────────── */
+.summary-human-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  transition: color 140ms, border-color 140ms, background 140ms;
+  user-select: none;
+  flex-shrink: 0;
+}
+.summary-human-toggle:hover {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: rgba(255,255,255,0.04);
+}
+.summary-human-toggle input[type="checkbox"] {
+  accent-color: var(--accent2);
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.pcard.is-human .summary-human-toggle {
+  color: var(--accent2);
+  border-color: rgba(141,176,204,0.3);
+  background: rgba(141,176,204,0.07);
+}
 
 /* ── responsive ─────────────────────────────────────────── */
 
@@ -1459,6 +1501,27 @@ textarea {
 
 /* divider between toggles and action buttons */
 .pcard-toggles .pcard-sep + .btn-view-store { border-left: 1px solid var(--border); padding-left: 12px; }
+
+/* inline label+select in the toggles row or tuning grid */
+.pcard-tuning-grid .pfield-inline { grid-column: 1 / -1; }
+.pfield-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.pfield-inline select {
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 3px 6px;
+}
 
 /* ── TTS row: flex strip instead of cramped 3-col grid ───── */
 .pcard-row.pcard-tts-row {

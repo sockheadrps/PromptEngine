@@ -15,8 +15,9 @@
     <div class="header-brand">
       <h1>promptlibretto</h1>
       <nav class="header-page-nav">
+        <a href="/" class="header-page-link">Home</a>
         <span class="header-page-link active">Builder</span>
-        <a href="/" class="header-page-link">Studio</a>
+        <a href="/studio" class="header-page-link">Studio</a>
         <a href="/ensemble" class="header-page-link">Ensemble</a>
       </nav>
     </div>
@@ -25,11 +26,6 @@
         <option value="">Load…</option>
       </select>
       <button type="button" class="header-nav-btn" onclick="saveRegistry()">Save</button>
-      <button type="button" class="header-nav-btn" onclick="importModel()">Import JSON</button>
-      <button type="button" class="header-nav-btn" onclick="validateRegistry()">Validate</button>
-      <button type="button" class="header-nav-btn" onclick="copyToClipboard()" id="copy-btn">Copy JSON</button>
-      <button type="button" class="header-nav-btn header-nav-accent" onclick="exportFullModel()">Generate Registry</button>
-      <button type="button" class="header-nav-btn header-nav-accent" onclick="openInStudio()">Open in Studio</button>
     </div>
   </header>
 
@@ -300,9 +296,9 @@
               <button type="button" id="preview-tab-flow" class="preview-tab" onclick="switchPreviewTab('flow')">Flow View</button>
             </div>
             <div class="preview-actions">
-              <span id="validation-status" class="validation-status">Not validated yet</span>
-              <button id="preview-action-validate" onclick="validateRegistry()" class="ghost-btn">Validate</button>
-              <button id="preview-action-copy" onclick="copyToClipboard()" class="ghost-btn">Copy</button>
+              <button id="preview-action-validate" onclick="validateRegistry()" class="primary-btn compact">Validate</button>
+              <button id="preview-action-copy" onclick="copyToClipboard()" class="primary-btn compact">Copy JSON</button>
+              <button onclick="openInStudio()" class="primary-btn compact">Open in Studio</button>
             </div>
           </div>
 

@@ -895,6 +895,14 @@ main.grid.no-debug .debug-panel { display: none; }
 .grid-2 input { padding: 4px 6px; font-family: var(--font-mono); font-size: 12px; }
 .mem-model-row { display: flex; gap: 4px; }
 .mem-model-row input { flex: 1; min-width: 0; }
+.mem-endpoint-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.mem-endpoint-header { display: flex; align-items: center; gap: 8px; }
+.mem-endpoint-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.mem-sep-url-label { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); margin-left: auto; cursor: pointer; }
+.mem-model-status { font-size: 10px; font-family: var(--font-mono); color: var(--muted); }
+.mem-model-status[data-kind="ok"] { color: var(--green, #6ee7b7); }
+.mem-model-status[data-kind="warn"] { color: var(--yellow, #fcd34d); }
+.mem-model-status[data-kind="err"] { color: var(--red, #f87171); }
 
 /* ── Overlay Suggestions ───────────────────────────────────────── */
 .overlay-suggestions {

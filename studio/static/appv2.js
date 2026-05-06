@@ -357,6 +357,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     "runtime_injections",
     "prompt_endings",
     "examples",
+    "memory_recall",
   ]);
 
   function containerFor(key) {
@@ -371,6 +372,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     base_context: "Base Context",
     personas: "Personas",
     sentiment: "Sentiment",
+    groups: "Groups",
     static_injections: "Static Injections",
     runtime_injections: "Runtime Injections",
     output_prompt_directions: "Output Directions",
@@ -388,15 +390,23 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     personas: [
       { field: "id", label: "ID", type: "text" },
       { field: "context", label: "Context", type: "textarea" },
+      { field: "groups", label: "Groups", type: "group-ids" },
     ],
     sentiment: [
       { field: "id", label: "ID", type: "text" },
       { field: "context", label: "Context", type: "textarea" },
+      { field: "groups", label: "Groups", type: "group-ids" },
+    ],
+    groups: [
+      { field: "id", label: "ID", type: "text" },
+      { field: "pre_context", label: "Pre-context", type: "textarea" },
+      { field: "items", label: "Snippets", type: "lines" },
     ],
     static_injections: [
       { field: "id", label: "ID", type: "text" },
       { field: "text", label: "Text", type: "textarea" },
       { field: "items", label: "Pool items", type: "lines" },
+      { field: "groups", label: "Groups", type: "group-ids" },
     ],
     runtime_injections: [
       { field: "id", label: "ID", type: "text" },
@@ -513,13 +523,19 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
 
   // v2: array mode fields are qualified keys.
   // items with `groups: ["id1","id2"]` yield "groups[id1]", "groups[id2]".
+  // Inline group objects {id, items} are also supported.
   // PromptEnding items with `items: [...]` yield "items".
   function arrayFieldsOf(item) {
     if (!item || typeof item !== "object") return [];
     const fields = [];
     if (Array.isArray(item.groups)) {
       for (const gid of item.groups) {
-        if (typeof gid === "string") fields.push(`groups[${gid}]`);
+        if (typeof gid === "string") {
+          fields.push(`groups[${gid}]`);
+        } else if (typeof gid === "object" && gid !== null) {
+          const id = gid.id || gid.name;
+          if (id) fields.push(`groups[${id}]`);
+        }
       }
     }
     if (Array.isArray(item.items)) fields.push("items");
@@ -653,9 +669,18 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     const groupMatch = field.match(/^groups\[(.+)\]$/);
     if (groupMatch) {
       const gid = groupMatch[1];
+      // First try the top-level groups section (string-ID references).
       const groupItems = (registry && registry.groups && registry.groups.items) || [];
       const group = groupItems.find(it => (it.id || it.name) === gid);
-      return group && Array.isArray(group.items) ? group.items : [];
+      if (group && Array.isArray(group.items)) return group.items;
+      // Fall back to inline group objects embedded directly on the selected item.
+      const items = Array.isArray(sel) ? sel : [sel];
+      for (const it of items) {
+        if (!Array.isArray(it.groups)) continue;
+        const inline = it.groups.find(g => typeof g === "object" && g !== null && (g.id || g.name) === gid);
+        if (inline && Array.isArray(inline.items)) return inline.items;
+      }
+      return [];
     }
     if (Array.isArray(sel)) {
       for (const it of sel) if (Array.isArray(it[field])) return it[field];
@@ -748,6 +773,31 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         return `<label class="registry-add-row"><span>${escapeHtml(
           f.label
         )}</span><textarea ${common} rows="3">${escapeHtml(v ?? "")}</textarea>${preview}</label>`;
+      }
+      if (f.type === "group-ids") {
+        // Like "lines" but coerces objects to their id/name string so inline
+        // group objects don't render as "[object Object]".
+        const arr = Array.isArray(v) ? v : [];
+        const rowsHtml = arr.map((val, i) => {
+          const display = typeof val === "object" && val !== null
+            ? (val.id || val.name || "")
+            : String(val ?? "");
+          return `<div class="list-item-row">` +
+          `<input type="text" value="${escapeHtml(display)}" placeholder="group id" ` +
+          `data-list-section="${escapeHtml(sectionKey)}" data-list-item="${escapeHtml(itemId)}" ` +
+          `data-list-field="${escapeHtml(f.field)}" data-list-index="${i}">` +
+          `<button type="button" class="list-item-remove" title="Remove" ` +
+          `data-list-remove data-list-section="${escapeHtml(sectionKey)}" ` +
+          `data-list-item="${escapeHtml(itemId)}" data-list-field="${escapeHtml(f.field)}" ` +
+          `data-list-index="${i}">×</button>` +
+          `</div>`;
+        }).join("");
+        return `<div class="registry-add-row"><span>${escapeHtml(f.label)}</span>` +
+          `<div class="list-field" data-list-host="${escapeHtml(sectionKey)}:${escapeHtml(itemId)}:${escapeHtml(f.field)}">` +
+          rowsHtml +
+          `<button type="button" class="list-item-add" ` +
+          `data-list-add="${escapeHtml(sectionKey)}:${escapeHtml(itemId)}:${escapeHtml(f.field)}">+ Add</button>` +
+          `</div></div>`;
       }
       if (f.type === "lines") {
         const arr = Array.isArray(v) ? v : [];
@@ -2136,25 +2186,83 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     if (infoToggle) infoToggle.checked = useClf;
   }
 
+  async function _fetchMemModelList(url) {
+    if (!url || !/^https?:\/\//.test(url)) return [];
+    const base = url.replace(/\/+$/, "");
+    for (const path of ["/api/tags", "/v1/models"]) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const r = await fetch(base + path, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!r.ok) continue;
+        const d = await r.json();
+        if (Array.isArray(d.models)) return d.models.map(m => m.name).filter(Boolean);
+        if (Array.isArray(d.data))   return d.data.map(m => m.id).filter(Boolean);
+      } catch {}
+    }
+    return [];
+  }
+
+  async function _populateMemSelect(selectId, url, savedValue, statusId) {
+    const sel = $(selectId);
+    const stEl = statusId ? $(statusId) : null;
+    if (!sel) return;
+    if (!url) {
+      sel.innerHTML = '<option value="">— enter a URL —</option>';
+      if (stEl) { stEl.textContent = ""; delete stEl.dataset.kind; }
+      return;
+    }
+    if (stEl) { stEl.textContent = "…"; delete stEl.dataset.kind; }
+    const models = await _fetchMemModelList(url);
+    const want = savedValue || sel.value;
+    if (!models.length) {
+      sel.innerHTML = want
+        ? `<option value="${escapeHtml(want)}">${escapeHtml(want)}</option>`
+        : '<option value="">— no models found —</option>';
+      if (stEl) { stEl.textContent = "none"; stEl.dataset.kind = "warn"; }
+    } else {
+      sel.innerHTML = models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join("");
+      if (want && ![...sel.options].some(o => o.value === want)) {
+        const opt = document.createElement("option");
+        opt.value = opt.textContent = want;
+        sel.insertBefore(opt, sel.firstChild);
+      }
+      if (want) sel.value = want;
+      if (!sel.value) sel.value = models[0];
+      if (stEl) { stEl.textContent = `${models.length}`; stEl.dataset.kind = "ok"; }
+    }
+    syncMemoryConfigFromPanel();
+  }
+
+  function _embedFetchUrl() {
+    const useSep = $("studio-mem-use-embed-url")?.checked;
+    const sep = $("studio-mem-embed-url")?.value?.trim();
+    const clf = $("studio-mem-classifier-url")?.value?.trim();
+    return (useSep && sep) ? sep : (clf || "");
+  }
+
   function populateMemoryConfigPanel() {
     const cfg = registry?.memory_config || {};
-    const set = (id, val) => { const el = $(id); if (el && val != null) el.value = val; };
-    set("studio-mem-classifier-url",   cfg.classifier_url);
-    set("studio-mem-classifier-model", cfg.classifier_model);
+    const clfUrl     = cfg.classifier_url || "";
     const hasEmbedUrl = !!cfg.embed_url;
-    const embedCb = $("studio-mem-use-embed-url");
-    if (embedCb) embedCb.checked = hasEmbedUrl;
-    const embedSec = $("studio-mem-embed-url-section");
-    if (embedSec) embedSec.hidden = !hasEmbedUrl;
-    set("studio-mem-embed-url",        cfg.embed_url);
-    set("studio-mem-embed-model",      cfg.embed_model);
-    set("studio-mem-top-k",            cfg.top_k);
-    set("studio-mem-prune-keep",       cfg.prune_keep);
+    const clfUrlEl   = $("studio-mem-classifier-url");
+    const embUrlEl   = $("studio-mem-embed-url");
+    const embedCb    = $("studio-mem-use-embed-url");
+    if (clfUrlEl) clfUrlEl.value = clfUrl;
+    if (embedCb)  embedCb.checked = hasEmbedUrl;
+    if (embUrlEl) { embUrlEl.value = cfg.embed_url || ""; embUrlEl.hidden = !hasEmbedUrl; }
+    const setNum = (id, val) => { const el = $(id); if (el && val != null) el.value = val; };
+    setNum("studio-mem-top-k",    cfg.top_k);
+    setNum("studio-mem-prune-keep", cfg.prune_keep);
+    _populateMemSelect("studio-mem-classifier-model", clfUrl, cfg.classifier_model, "mem-clf-status");
+    const embFetchUrl = hasEmbedUrl ? (cfg.embed_url || "") : clfUrl;
+    _populateMemSelect("studio-mem-embed-model", embFetchUrl, cfg.embed_model, "mem-emb-status");
   }
 
   function syncMemoryConfigFromPanel() {
     if (!registry) return;
-    const read = (id) => $(id)?.value?.trim() || undefined;
+    const read    = (id) => $(id)?.value?.trim() || undefined;
     const readNum = (id) => { const n = parseInt($(id)?.value, 10); return Number.isFinite(n) ? n : undefined; };
     const cfg = {};
     const cu = read("studio-mem-classifier-url");   if (cu) cfg.classifier_url   = cu;
@@ -2164,68 +2272,50 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       const eu = read("studio-mem-embed-url"); if (eu) cfg.embed_url = eu;
     }
     const em = read("studio-mem-embed-model"); if (em) cfg.embed_model = em;
-    const tk = readNum("studio-mem-top-k");         if (tk) cfg.top_k            = tk;
-    const pk = readNum("studio-mem-prune-keep");    if (pk != null) cfg.prune_keep = pk;
+    const tk = readNum("studio-mem-top-k");          if (tk) cfg.top_k       = tk;
+    const pk = readNum("studio-mem-prune-keep");     if (pk != null) cfg.prune_keep = pk;
     const ucEl = $("mem-info-use-classifier");
     if (ucEl) cfg.use_classifier = ucEl.checked;
-    // preserve other keys (store_path, personality_file) from registry
     const merged = { ...(registry.memory_config || {}), ...cfg };
     if (!useEmbedUrl) delete merged.embed_url;
     registry.memory_config = merged;
   }
 
-  // Wire memory config panel inputs to sync back into registry on change
-  ["studio-mem-classifier-url","studio-mem-classifier-model","studio-mem-embed-url",
-   "studio-mem-embed-model","studio-mem-top-k","studio-mem-prune-keep"].forEach((id) => {
-    $(id)?.addEventListener("change", syncMemoryConfigFromPanel);
+  // Classifier URL → auto-fetch models (debounced)
+  let _memClfDebounce, _memEmbDebounce;
+  $("studio-mem-classifier-url")?.addEventListener("input", () => {
+    clearTimeout(_memClfDebounce);
+    _memClfDebounce = setTimeout(() => {
+      const url = $("studio-mem-classifier-url")?.value?.trim();
+      _populateMemSelect("studio-mem-classifier-model", url, "", "mem-clf-status");
+      if (!$("studio-mem-use-embed-url")?.checked)
+        _populateMemSelect("studio-mem-embed-model", url, "", "mem-emb-status");
+    }, 400);
   });
 
+  // Separate embed URL → auto-fetch embed models (debounced)
+  $("studio-mem-embed-url")?.addEventListener("input", () => {
+    clearTimeout(_memEmbDebounce);
+    _memEmbDebounce = setTimeout(() => {
+      _populateMemSelect("studio-mem-embed-model", $("studio-mem-embed-url")?.value?.trim(), "", "mem-emb-status");
+    }, 400);
+  });
+
+  // Separate URL toggle
   $("studio-mem-use-embed-url")?.addEventListener("change", () => {
     const cb = $("studio-mem-use-embed-url");
-    const sec = $("studio-mem-embed-url-section");
-    if (sec) sec.hidden = !cb?.checked;
+    const embUrlEl = $("studio-mem-embed-url");
+    if (embUrlEl) embUrlEl.hidden = !cb?.checked;
+    _populateMemSelect("studio-mem-embed-model", _embedFetchUrl(), "", "mem-emb-status");
     syncMemoryConfigFromPanel();
   });
 
-  $("mem-info-use-classifier")?.addEventListener("change", syncMemoryConfigFromPanel);
+  ["studio-mem-classifier-model","studio-mem-embed-model",
+   "studio-mem-top-k","studio-mem-prune-keep"].forEach(id => {
+    $(id)?.addEventListener("change", syncMemoryConfigFromPanel);
+  });
 
-  const studioMemFetchBtn = $("studio-mem-fetch-btn");
-  if (studioMemFetchBtn) {
-    studioMemFetchBtn.addEventListener("click", async () => {
-      const base = ($("studio-mem-classifier-url")?.value?.trim() || "").replace(/\/+$/, "");
-      if (!base) { alert("Set classifier_url first."); return; }
-      studioMemFetchBtn.textContent = "…";
-      studioMemFetchBtn.disabled = true;
-      try {
-        let models = [];
-        for (const path of ["/api/tags", "/v1/models"]) {
-          try {
-            const r = await fetch(base + path);
-            if (!r.ok) continue;
-            const d = await r.json();
-            if (Array.isArray(d.models)) { models = d.models.map((m) => m.name).filter(Boolean); break; }
-            if (Array.isArray(d.data))   { models = d.data.map((m) => m.id).filter(Boolean); break; }
-          } catch {}
-        }
-        const input = $("studio-mem-classifier-model");
-        if (input && models.length) {
-          const current = input.value;
-          // Show a quick datalist for autocomplete
-          let dl = document.getElementById("studio-mem-model-list");
-          if (!dl) { dl = document.createElement("datalist"); dl.id = "studio-mem-model-list"; document.body.appendChild(dl); input.setAttribute("list", "studio-mem-model-list"); }
-          dl.innerHTML = models.map((m) => `<option value="${m}">`).join("");
-          if (!current) input.value = models[0] || "";
-        } else if (!models.length) {
-          alert("No models found at that URL.");
-        }
-      } catch (e) {
-        alert(`Fetch failed: ${e.message}`);
-      } finally {
-        studioMemFetchBtn.textContent = "↺";
-        studioMemFetchBtn.disabled = false;
-      }
-    });
-  }
+  $("mem-info-use-classifier")?.addEventListener("change", syncMemoryConfigFromPanel);
 
   function renderMemoryPipeline(userInput, result) {
     const emptyEl  = $("memory-pipeline-empty");

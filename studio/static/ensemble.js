@@ -157,7 +157,6 @@ async function loadSnapshot(side) {
 
   let registry = null;
   let snap = null;
-  let preset = null;
 
   if (val.startsWith("__example__:")) {
     const file = val.slice("__example__:".length);
@@ -326,6 +325,33 @@ function setRunning(running) {
   document.getElementById("btn-stop").classList.toggle("visible", running);
 }
 
+function applySectionRandomMode(mode, regObj, state) {
+  const reg = regObj?.registry ?? regObj;
+  if (!reg || !state) return state;
+  const next = JSON.parse(JSON.stringify(state));
+
+  if (mode === "once") {
+    for (const [secKey, secState] of Object.entries(next)) {
+      if (!secState.section_random) continue;
+      const sec = reg[secKey];
+      if (!sec || !Array.isArray(sec.items) || !sec.items.length) continue;
+      const item = sec.items[Math.floor(Math.random() * sec.items.length)];
+      const itemId = item.id || item.name || "";
+      if (itemId) {
+        secState.selected = itemId;
+        secState.section_random = false;
+      }
+    }
+  } else if (mode === "per-message") {
+    for (const [secKey, secState] of Object.entries(next)) {
+      const sec = reg[secKey];
+      if (!sec || !Array.isArray(sec.items) || sec.items.length < 2) continue;
+      secState.section_random = true;
+    }
+  }
+  return next;
+}
+
 async function startEnsemble() {
   const humanA = document.getElementById("a-human")?.checked || false;
   const humanB = document.getElementById("b-human")?.checked || false;
@@ -387,6 +413,9 @@ async function startEnsemble() {
   const genA  = genOverrides("a");
   const genB  = genOverrides("b");
 
+  const sectionRandomModeA = document.getElementById("a-section-random-mode")?.value || "off";
+  const sectionRandomModeB = document.getElementById("b-section-random-mode")?.value || "off";
+
   let registryA = {};
   let registryB = {};
   try {
@@ -395,6 +424,13 @@ async function startEnsemble() {
   } catch (e) {
     setStatus(e.message);
     return;
+  }
+
+  if (!humanA && sectionRandomModeA !== "off") {
+    participantState.a = applySectionRandomMode(sectionRandomModeA, registryA, participantState.a || {});
+  }
+  if (!humanB && sectionRandomModeB !== "off") {
+    participantState.b = applySectionRandomMode(sectionRandomModeB, registryB, participantState.b || {});
   }
 
   const seed = document.getElementById("seed").value.trim();
@@ -655,7 +691,7 @@ function holdBubble(bubbleEl) {
 function renderHeldTraceIfReady(gate) {
   if (!gate || gate.traceRendered || !gate.traceEvent) return;
   const event = gate.traceEvent;
-  renderSidePanel(event.side, event.speaker, event.trace);
+  renderSidePanel(event.side, event.speaker, event.trace, gate.postGen || null);
   gate.traceRendered = true;
 }
 
@@ -944,7 +980,7 @@ function closeMemView() {
   if (ov) ov.hidden = true;
 }
 
-function renderMemView(name, data) {
+function renderMemView(_name, data) {
   const m = document.getElementById("memview-meta");
   const b = document.getElementById("memview-body");
   if (!b) return;
@@ -1093,6 +1129,47 @@ function stopEnsemble() {
 let currentBubble = null;
 let turnCount = 0;
 const _sidesSpoken = new Set();
+const _turnStartMs = {};
+
+function syncSidePanelThoughtsTab(side, hasMemory) {
+  const panel = document.getElementById(`side-${side}`);
+  if (!panel) return;
+  const thoughtsTab = panel.querySelector(`.side-tab[data-tab="thoughts"]`);
+  const traceTab    = panel.querySelector(`.side-tab[data-tab="trace"]`);
+  const body        = panel.querySelector(".side-panel-body");
+  if (!thoughtsTab) return;
+  thoughtsTab.hidden = !hasMemory;
+  if (!hasMemory) {
+    thoughtsTab.classList.remove("active");
+    traceTab?.classList.add("active");
+    if (body) {
+      body.querySelectorAll(".side-tab-pane").forEach((p) => {
+        p.hidden = p.dataset.tab !== "trace";
+      });
+      body.dataset.activeTab = "trace";
+    }
+  }
+}
+
+function appendPostGenToTrace(side, postGen) {
+  const traceEl = document.getElementById(`side-${side}-trace`);
+  if (!traceEl || traceEl.querySelector(".post-gen-section")) return;
+  const sec = document.createElement("details");
+  sec.className = "side-section post-gen-section";
+  sec.open = true;
+  const rows = [
+    ["chars",   postGen.chars],
+    ["words",   postGen.words],
+    ["~tokens", postGen.tokens],
+    ["latency", postGen.latencyMs != null ? `${Math.round(postGen.latencyMs)}ms` : null],
+  ].filter(([, v]) => v != null);
+  sec.innerHTML = `
+    <summary>Response <span class="side-section-meta">${postGen.chars} ch · ~${postGen.tokens} tok</span></summary>
+    <div class="side-section-body">
+      ${rows.map(([k, v]) => `<div class="trace-line"><span class="muted">${escHtml(k)}</span> <strong>${escHtml(String(v))}</strong></div>`).join("")}
+    </div>`;
+  traceEl.insertBefore(sec, traceEl.firstChild);
+}
 
 function handleEvent(event, nameA, nameB) {
   if (event.type === "memory_status") {
@@ -1100,6 +1177,8 @@ function handleEvent(event, nameA, nameB) {
     if (event.a) bits.push(`${nameA}: memory`);
     if (event.b) bits.push(`${nameB}: memory`);
     if (bits.length) setStatus(`running… (${bits.join(", ")})`);
+    syncSidePanelThoughtsTab("a", !!event.a);
+    syncSidePanelThoughtsTab("b", !!event.b);
     return;
   }
   if (event.type === "prepare_trace") {
@@ -1111,6 +1190,7 @@ function handleEvent(event, nameA, nameB) {
     return;
   }
   if (event.type === "turn_start") {
+    _turnStartMs[event.turn] = performance.now();
     // Resuming from a step gate / starting next turn — clear the step state.
     _stepPending = false;
     refreshStepButton();
@@ -1131,10 +1211,24 @@ function handleEvent(event, nameA, nameB) {
     const bubbleRef = currentBubble;
     if (bubbleRef) {
       finalizeBubble(bubbleRef);
-      // Show metadata (chars / words / token estimate) in the label.
       if (event.text) annotateBubble(bubbleRef, event.text);
     }
     currentBubble = null;
+    if (event.text) {
+      const side = event.speaker === nameA ? "a" : "b";
+      const latencyMs = _turnStartMs[event.turn] != null
+        ? performance.now() - _turnStartMs[event.turn] : null;
+      delete _turnStartMs[event.turn];
+      const postGen = {
+        chars:     event.text.length,
+        words:     event.text.trim().split(/\s+/).filter(Boolean).length,
+        tokens:    approxTokens(event.text),
+        latencyMs,
+      };
+      const gate = getTurnGate(event.turn);
+      gate.postGen = postGen;
+      if (gate.traceRendered) appendPostGenToTrace(side, postGen);
+    }
     turnCount++;
     setStatus(`turn ${turnCount} / ${document.getElementById("turns").value}`);
     // Speak the just-finalized turn if TTS is on for that participant.
@@ -1172,7 +1266,7 @@ function handleEvent(event, nameA, nameB) {
   }
 }
 
-function showHumanPrompt(side, name, num, lastInput, sessionId) {
+function showHumanPrompt(side, name, num, _lastInput, sessionId) {
   const conv = document.getElementById("conversation");
   const turn = document.createElement("div");
   turn.className = `turn speaker-${side} human-pending`;
@@ -1337,7 +1431,7 @@ function parseThoughts(text) {
   return result;
 }
 
-function renderSidePanel(side, speakerName, trace) {
+function renderSidePanel(side, speakerName, trace, postGen = null) {
   const nameEl = document.getElementById(`side-${side}-name`);
   const modelEl = document.getElementById(`side-${side}-model`);
   const selfEl = document.getElementById(`side-${side}-self`);
@@ -1402,7 +1496,7 @@ function renderSidePanel(side, speakerName, trace) {
       sec.className = "side-section";
       sec.open = true;
       sec.innerHTML = `
-        <summary>Generation params <span class="side-section-meta">${escHtml(String(g.model || "—"))}</span></summary>
+        <summary>Generation <span class="side-section-meta">${escHtml(String(g.model || "—"))}</span></summary>
         <div class="side-section-body">
           ${rows.map(([k, v]) => `<div class="trace-line"><span class="muted">${escHtml(k)}</span> <strong>${escHtml(String(v))}</strong></div>`).join("")}
         </div>`;
@@ -1479,6 +1573,9 @@ function renderSidePanel(side, speakerName, trace) {
         </div>`;
       traceEl.appendChild(sec);
     }
+
+    // Post-generation stats — available when called after turn_end (TTS-hold path).
+    if (postGen) appendPostGenToTrace(side, postGen);
   }
 }
 
@@ -1487,7 +1584,7 @@ function appendChunk({ bubble, cursor }, text) {
   bubble.insertBefore(node, cursor);
 }
 
-function finalizeBubble({ bubble, cursor }) {
+function finalizeBubble({ bubble: _bubble, cursor }) {
   cursor.remove();
 }
 
@@ -1745,6 +1842,20 @@ function updateSeedVisibility() {
   if (seedEl) seedEl.hidden = !(hasRun && (humanA || humanB));
 }
 
+function syncMemoryUI() {
+  for (const side of ["a", "b"]) {
+    const memOn = document.getElementById(`${side}-memory`)?.checked !== false;
+    document.getElementById(`card-${side}`)?.classList.toggle("is-no-memory", !memOn);
+  }
+}
+
+function syncTtsUI() {
+  for (const side of ["a", "b"]) {
+    const ttsOn = document.getElementById(`${side}-tts`)?.checked || false;
+    document.getElementById(`card-${side}`)?.classList.toggle("is-no-tts", !ttsOn);
+  }
+}
+
 function syncHumanUI() {
   const humanA = document.getElementById("a-human")?.checked || false;
   const humanB = document.getElementById("b-human")?.checked || false;
@@ -1855,8 +1966,15 @@ window.addEventListener("load", () => {
   }
   loadParticipantSettings();
   bindSettingsAutosave();
-  document.getElementById("a-human")?.addEventListener("change", syncHumanUI);
-  document.getElementById("b-human")?.addEventListener("change", syncHumanUI);
+  document.getElementById("a-human")?.addEventListener("change", () => { syncHumanUI(); syncMemoryUI(); syncTtsUI(); });
+  document.getElementById("b-human")?.addEventListener("change", () => { syncHumanUI(); syncMemoryUI(); syncTtsUI(); });
+  document.getElementById("a-memory")?.addEventListener("change", syncMemoryUI);
+  document.getElementById("b-memory")?.addEventListener("change", syncMemoryUI);
+  document.getElementById("a-tts")?.addEventListener("change", syncTtsUI);
+  document.getElementById("b-tts")?.addEventListener("change", syncTtsUI);
+  syncHumanUI();
+  syncMemoryUI();
+  syncTtsUI();
   updateSeedVisibility();
 
   for (const side of ["a", "b"]) {
