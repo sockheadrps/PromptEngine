@@ -1408,7 +1408,7 @@ function openInStudio() {
   if (!payload) return;
   try {
     localStorage.setItem(STUDIO_INBOX_KEY, JSON.stringify(payload));
-    window.location.href = "/";
+    window.location.href = "/studio";
   } catch (err) {
     alert(`Failed to pass registry to Studio: ${err.message}`);
   }
