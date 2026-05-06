@@ -78,6 +78,8 @@
         border: 1px solid var(--border);
         border-radius: 10px;
         overflow: hidden;
+        max-width: 880px;
+        margin: 0 auto;
       }
 
       .script-header {
@@ -98,11 +100,10 @@
       }
 
       .script-body {
-        padding: 28px 32px;
+        padding: 30px 36px 34px;
         font-size: 1.05rem;
-        line-height: 1.85;
+        line-height: 1.75;
         color: var(--text-main);
-        white-space: pre-wrap;
       }
 
       .script-body .beat {
@@ -117,6 +118,10 @@
 
       .script-body p {
         margin: 0 0 16px;
+      }
+
+      .script-body p:last-child {
+        margin-bottom: 0;
       }
 
       .copy-btn {
@@ -310,7 +315,10 @@
   <body>
     <div class="container">
       <div class="tab-bar">
-        <button class="tab-btn active" onclick="showTab('intro-script', this)">
+        <button class="tab-btn active" onclick="showTab('home-script', this)">
+          Home Script
+        </button>
+        <button class="tab-btn" onclick="showTab('intro-script', this)">
           Intro Script
         </button>
         <button class="tab-btn" onclick="showTab('builder-script', this)">
@@ -324,8 +332,55 @@
         </button>
       </div>
 
-      <!-- ── Tab 0: Intro Script ── -->
-      <div id="intro-script" class="tab-panel active">
+      <!-- ── Tab 0: Home Script ── -->
+      <div id="home-script" class="tab-panel active">
+        <div class="script-wrap">
+          <div class="script-header">
+            <span class="script-title">Home Page — Configuration &amp; Workspaces</span>
+            <button
+              class="copy-btn"
+              onclick="copyScript('home-script-text', this)"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="script-body" id="home-script-text">
+            <p>
+              The home page is the launchpad for Prompt Constructor. Before you
+              build or run anything, this is where you confirm that the local
+              services the app depends on are actually reachable.
+            </p>
+
+            <p>
+              Connection Configuration has three model roles: LLM for chat
+              generation, Embed for semantic memory search, and Classifier for
+              detecting tags or scenarios that trigger memory rules.
+            </p>
+
+            <p>
+              Connection Status checks whether the browser can reach each local
+              service. If a check fails, that part of the app needs its URL,
+              model name, server process, or CORS setting fixed.
+            </p>
+
+            <p>
+              Workspaces are how user data is separated without requiring login
+              or auth. The workspace ID is tied to saved registries, connection
+              settings, snapshots, memory files, personality notes, working
+              notes, summaries, and similar artifacts. If that workspace is
+              cleared from browser storage, or you open the site from a
+              different computer, the old workspace data will not be available
+              unless you still have that workspace ID and its saved files.
+              To make sure you never lose model registries you build, export and
+              store the registry JSON; it can be imported back into the site as
+              raw JSON from any workspace.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 1: Intro Script ── -->
+      <div id="intro-script" class="tab-panel">
         <div class="script-wrap">
           <div class="script-header">
             <span class="script-title"
@@ -364,6 +419,35 @@
               get a visual builder for authoring registries, a studio for
               testing them against a live model, and an ensemble mode that runs
               two registry-driven agents in conversation with each other.
+            </p>
+
+            <p>
+              One important setup detail: because the browser talks directly to
+              your local model server, that model server has to allow this
+              browser origin with CORS. For Ollama on Windows, you can start it
+              with OLLAMA_ORIGINS set to http://127.0.0.1:8181, then run
+              ollama serve. Without that, the browser blocks the request before
+              it ever reaches the model, so the server may look quiet even
+              though generation is failing.
+            </p>
+
+            <p>
+              The privacy model is simple: browser to your local model, and
+              back. The promptlibretto server running at http://127.0.0.1:8181
+              is not the LLM proxy. It assembles the registry into prompt text
+              and returns that prompt to the browser. Then the browser sends the
+              prompt to your local generation, classification, or embedding
+              model. Your prompts and model responses stay on your machine and
+              do not travel through the promptlibretto server.
+            </p>
+
+            <p>
+              With memory enabled, the server may coordinate the memory index,
+              but model calls still happen from the browser. The server asks the
+              browser for embeddings over a lightweight WebSocket; the browser
+              sends text to your local embedding model, gets vectors back, and
+              returns those vectors to the server index. The server stores the
+              searchable vector data, not the raw text sent to the local model.
             </p>
 
             <p>
@@ -456,11 +540,13 @@
               the existing prompt or be directed to change specific template
               structure and values in the registry.
             </p>
-            Groups ID when_responding: Pre-context header line before the list
-            Your goal is to make the conversation frustrating, confusing, and
-            drawn-out, while repeatedly reminding the agent that your dad owns
-            the company and therefore you should get special treatment. When
-            responding: Items
+            <p>
+              Groups are where reusable behavioral snippets live. For example,
+              a group like when_responding can provide a pre-context line and a
+              list of response behaviors, then the selected persona or sentiment
+              can attach that group without duplicating the same instructions in
+              multiple places.
+            </p>
 
             <p>
               And at the bottom, output directions and prompt endings cap it off

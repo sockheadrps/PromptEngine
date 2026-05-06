@@ -1313,15 +1313,51 @@ async function loadBuilderExample(name) {
   }
 }
 
-function importModel() {
-  const raw = prompt("Paste Registry JSON:");
-  if (!raw) return;
+function showJsonImportError(message) {
+  const err = document.getElementById("json-import-error");
+  if (!err) return;
+  err.textContent = message;
+  err.hidden = false;
+}
+
+function openJsonImportModal() {
+  const modal = document.getElementById("json-import-modal");
+  const input = document.getElementById("json-import-input");
+  const err = document.getElementById("json-import-error");
+  if (!modal || !input) return;
+  input.value = "";
+  if (err) {
+    err.textContent = "";
+    err.hidden = true;
+  }
+  modal.hidden = false;
+  window.setTimeout(() => input.focus(), 30);
+}
+
+function closeJsonImportModal() {
+  const modal = document.getElementById("json-import-modal");
+  if (modal) modal.hidden = true;
+}
+
+function loadJsonImportModal() {
+  const input = document.getElementById("json-import-input");
+  const raw = (input?.value || "").trim();
+  if (!raw) {
+    showJsonImportError("Paste registry JSON before loading.");
+    return;
+  }
   try {
     applyRegistryJson(JSON.parse(raw));
+    closeJsonImportModal();
+    setValidationStatus("Registry JSON loaded.", true);
   } catch (e) {
     console.error(e);
-    alert("Import failed. Check console for details.");
+    showJsonImportError(`Import failed: ${e.message || String(e)}`);
   }
+}
+
+function importModel() {
+  openJsonImportModal();
 }
 
 function checkMemoryConfigErrors() {
@@ -2204,6 +2240,9 @@ window.saveRegistry = saveRegistry;
 window.loadSavedRegistry = loadSavedRegistry;
 window.deleteSavedRegistry = deleteSavedRegistry;
 window.handlePickerChange = handlePickerChange;
+window.openJsonImportModal = openJsonImportModal;
+window.closeJsonImportModal = closeJsonImportModal;
+window.loadJsonImportModal = loadJsonImportModal;
 window.setMemoryChoice = setMemoryChoice;
 window.checkMemoryConfigReady = checkMemoryConfigReady;
 window.completeSetup = completeSetup;

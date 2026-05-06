@@ -899,6 +899,24 @@ select:focus {
   justify-content: center;
 }
 
+#json-import-modal {
+  display: flex;
+}
+
+.builder-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(6px);
+  z-index: 42;
+  align-items: center;
+  justify-content: center;
+}
+
+.builder-modal-overlay[hidden] {
+  display: none !important;
+}
+
 .modal-content {
   width: min(440px, calc(100vw - 24px));
   background: linear-gradient(180deg, rgba(26, 22, 17, 0.98), rgba(18, 15, 11, 0.98));
@@ -906,6 +924,34 @@ select:focus {
   border-radius: 14px;
   padding: 18px;
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
+}
+
+.modal-content-wide {
+  width: min(760px, calc(100vw - 28px));
+}
+
+.json-import-input {
+  min-height: 300px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.json-import-error {
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(196, 88, 88, 0.32);
+  border-radius: 8px;
+  background: rgba(196, 88, 88, 0.1);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.json-import-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
 }
 
 .modal-title {
@@ -2890,6 +2936,16 @@ select.header-nav-btn:focus {
 select.header-nav-btn option {
   background: #1a1510;
   color: #eee8de;
+}
+
+select.header-nav-btn optgroup {
+  background: #1a1510;
+  color: var(--accent);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 /* ── Fragments editor (base_context) ─────────────────────── */

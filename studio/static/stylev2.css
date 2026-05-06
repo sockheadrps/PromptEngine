@@ -632,6 +632,26 @@ button.help:hover {
 .modal-body .library-item .item-actions { display: flex; gap: 6px; }
 .modal-body .library-empty { color: var(--muted); font-style: italic; }
 
+.json-import-textarea {
+  width: 100%;
+  min-height: 300px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.json-import-error {
+  margin: 10px 0 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(196, 88, 88, 0.32);
+  border-radius: 6px;
+  background: rgba(196, 88, 88, 0.1);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* ── Policy Editor ─────────────────────────────────────────────── */
 .policy-editor {
   border: 1px solid var(--border);

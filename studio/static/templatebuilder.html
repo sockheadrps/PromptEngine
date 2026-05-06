@@ -41,6 +41,19 @@
     </div>
   </div>
 
+  <div id="json-import-modal" class="builder-modal-overlay" hidden onclick="closeJsonImportModal()">
+    <div class="modal-content modal-content-wide" onclick="event.stopPropagation()">
+      <h3 class="modal-title">Load Registry JSON</h3>
+      <p class="modal-subtitle">Paste a wrapped <code>{"registry": {...}}</code> object or a bare registry object.</p>
+      <textarea id="json-import-input" class="json-import-input" placeholder='{"registry": {"version": 2, ...}}'></textarea>
+      <div id="json-import-error" class="json-import-error" hidden></div>
+      <div class="modal-actions json-import-actions">
+        <button type="button" onclick="closeJsonImportModal()" class="ghost-btn">Cancel</button>
+        <button type="button" onclick="loadJsonImportModal()" class="primary-btn compact">Load</button>
+      </div>
+    </div>
+  </div>
+
   <div id="info-modal" class="section-info-overlay" hidden onclick="closeInfoModal()">
     <div class="section-info-content" onclick="event.stopPropagation()">
       <div class="section-info-header">

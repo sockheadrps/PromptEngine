@@ -55,7 +55,7 @@ Runtime state is section-scoped:
 
 ## Studio
 
-Studio is the runtime tuning surface. It lets you load a registry, select items per section, fill template variables, adjust sliders, set array modes, preview the hydrated prompt, and generate against a local model.
+Studio is the runtime tuning surface. It lets you load a registry, select items per section, fill template variables, adjust scale values, set array modes, preview the hydrated prompt, and generate against a local model.
 
 Browser-direct generation connects to a local Ollama or OpenAI-compatible endpoint from the browser. That path skips Python-side output-policy retries. For Python-side policy and retry behavior, use the server generate endpoint or load the exported registry in code with `Registry.from_dict()`.
 

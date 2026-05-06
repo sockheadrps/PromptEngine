@@ -1496,15 +1496,56 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   let loadedExample = null;
   let exampleDirtyTimer = null;
 
-  importBtn.addEventListener("click", () => {
-    const raw = prompt("Paste Registry JSON:");
-    if (!raw) return;
+  const importModal = $("registry-import-modal");
+  const importInput = $("registry-import-input");
+  const importError = $("registry-import-error");
+  const importLoadBtn = $("registry-import-load");
+
+  function showImportError(message) {
+    if (!importError) {
+      console.error(message);
+      return;
+    }
+    importError.textContent = message;
+    importError.hidden = false;
+  }
+
+  function openImportModal() {
+    if (!importModal || !importInput) return;
+    importInput.value = "";
+    if (importError) {
+      importError.textContent = "";
+      importError.hidden = true;
+    }
+    importModal.hidden = false;
+    setTimeout(() => importInput.focus(), 30);
+  }
+
+  function closeImportModal() {
+    if (importModal) importModal.hidden = true;
+  }
+
+  function loadImportModal() {
+    const raw = (importInput?.value || "").trim();
+    if (!raw) {
+      showImportError("Paste registry JSON before loading.");
+      return;
+    }
     try {
       loadRegistryDict(JSON.parse(raw));
       clearLoadedExample();
+      clearLoadedSnapshot();
+      closeImportModal();
     } catch (e) {
-      alert("Import failed: " + e.message);
+      console.error(e);
+      showImportError(`Import failed: ${e.message || String(e)}`);
     }
+  }
+
+  importBtn.addEventListener("click", openImportModal);
+  if (importLoadBtn) importLoadBtn.addEventListener("click", loadImportModal);
+  document.querySelectorAll("[data-close-registry-import]").forEach((el) => {
+    el.addEventListener("click", closeImportModal);
   });
   consumeBuilderHandoff();
   if (registry) clearLoadedExample();
@@ -1646,6 +1687,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
             if (!r.ok) throw new Error(`fetch ${path} ${r.status}`);
             const payload = await r.json();
             loadRegistryDict(payload);
+            clearLoadedSnapshot();
             const ex = examples.find((item) => item.path === path) || {};
             setLoadedExample(ex, payload);
             closeExamplesModal();
@@ -1695,11 +1737,19 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     studioMain?.addEventListener(eventName, scheduleExampleDirtyCheck);
   });
   studioMain?.addEventListener("click", (e) => {
-    if (e.target.closest("button")) scheduleExampleDirtyCheck();
+    if (e.target.closest("button")) {
+      scheduleExampleDirtyCheck();
+      scheduleSnapshotDirtyCheck();
+    }
+  });
+  ["input", "change"].forEach((eventName) => {
+    studioMain?.addEventListener(eventName, scheduleSnapshotDirtyCheck);
   });
 
   // ─── Snapshots (save / load current panel state) ─────────────
   const SNAP_KEY = "pl-registry-snapshots-v1";
+  let loadedSnapshot = null;
+  let snapshotDirtyTimer = null;
 
   function loadSnapshots() {
     try {
@@ -1711,8 +1761,10 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
   function persistSnapshots(arr) {
     try {
       localStorage.setItem(SNAP_KEY, JSON.stringify(arr));
+      return true;
     } catch (e) {
       alert("Failed to save snapshot: " + e.message);
+      return false;
     }
   }
 
@@ -1771,6 +1823,79 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     return snap;
   }
 
+  function comparableSnapshotPayload(name = "") {
+    if (!registry) return null;
+    const snap = captureSnapshot(name);
+    delete snap.name;
+    delete snap.savedAt;
+    return snap;
+  }
+
+  function updateSnapshotHeader() {
+    const indicator = $("snapshot-indicator");
+    const nameEl = $("snapshot-name");
+    const dirtyEl = $("snapshot-dirty");
+    const quickSaveBtn = $("snapshot-quick-save");
+    if (!indicator || !nameEl) return;
+
+    if (!loadedSnapshot) {
+      nameEl.textContent = "";
+      indicator.hidden = true;
+      if (dirtyEl) dirtyEl.hidden = true;
+      if (quickSaveBtn) quickSaveBtn.hidden = true;
+      return;
+    }
+
+    nameEl.textContent = loadedSnapshot.name;
+    indicator.hidden = false;
+    if (dirtyEl) dirtyEl.hidden = !loadedSnapshot.dirty;
+    if (quickSaveBtn) {
+      quickSaveBtn.hidden = !loadedSnapshot.dirty;
+      quickSaveBtn.title = `Save changes to ${loadedSnapshot.name}`;
+    }
+  }
+
+  function setLoadedSnapshot(name) {
+    loadedSnapshot = {
+      name,
+      dirty: false,
+      baseline: stableStringify(comparableSnapshotPayload(name)),
+    };
+    updateSnapshotHeader();
+  }
+
+  function clearLoadedSnapshot() {
+    loadedSnapshot = null;
+    window.clearTimeout(snapshotDirtyTimer);
+    updateSnapshotHeader();
+  }
+
+  function checkSnapshotDirty() {
+    if (!loadedSnapshot || !registry) return;
+    const current = stableStringify(comparableSnapshotPayload(loadedSnapshot.name));
+    loadedSnapshot.dirty = current !== loadedSnapshot.baseline;
+    updateSnapshotHeader();
+  }
+
+  function scheduleSnapshotDirtyCheck() {
+    if (!loadedSnapshot) return;
+    window.clearTimeout(snapshotDirtyTimer);
+    snapshotDirtyTimer = window.setTimeout(checkSnapshotDirty, 0);
+  }
+
+  function saveLoadedSnapshot() {
+    if (!loadedSnapshot || !registry) return;
+    const name = loadedSnapshot.name;
+    const snaps = loadSnapshots();
+    const existingIdx = snaps.findIndex((s) => s.name === name);
+    const snap = captureSnapshot(name);
+    if (existingIdx >= 0) snaps[existingIdx] = snap;
+    else snaps.unshift(snap);
+    if (!persistSnapshots(snaps)) return;
+    setLoadedSnapshot(name);
+    renderSnapshotList();
+  }
+
   // Restore internal state vars from a v2 state sections dict.
   function _applyV2StateToVars(stateDict) {
     if (!stateDict || typeof stateDict !== "object") return;
@@ -1818,12 +1943,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     refreshSectionPreviews();
     refreshMemoryUI();
 
-    const indicator = $("snapshot-indicator");
-    const nameEl = $("snapshot-name");
-    if (indicator && nameEl) {
-      nameEl.textContent = snap.name;
-      indicator.hidden = false;
-    }
+    setLoadedSnapshot(snap.name || "Snapshot");
   }
 
   function renderSnapshotList() {
@@ -1877,8 +1997,10 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         const snaps = loadSnapshots();
         if (!snaps[idx]) return;
         if (!confirm(`Delete snapshot "${snaps[idx].name}"?`)) return;
+        const deletedName = snaps[idx].name;
         snaps.splice(idx, 1);
-        persistSnapshots(snaps);
+        if (!persistSnapshots(snaps)) return;
+        if (loadedSnapshot?.name === deletedName) clearLoadedSnapshot();
         renderSnapshotList();
       });
     });
@@ -2030,16 +2152,27 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       } else {
         snaps.unshift(snap);
       }
-      persistSnapshots(snaps);
-      const indicator = $("snapshot-indicator");
-      const nameEl = $("snapshot-name");
-      if (indicator && nameEl) {
-        nameEl.textContent = name;
-        indicator.hidden = false;
-      }
+      if (!persistSnapshots(snaps)) return;
+      setLoadedSnapshot(name);
       if (err) err.hidden = true;
       if (nameInp) nameInp.value = "";
       renderSnapshotList();
+    });
+  }
+
+  const quickSaveBtn = $("snapshot-quick-save");
+  if (quickSaveBtn) {
+    quickSaveBtn.addEventListener("click", () => {
+      if (!loadedSnapshot || !registry) return;
+      const originalText = quickSaveBtn.textContent;
+      quickSaveBtn.disabled = true;
+      quickSaveBtn.textContent = "Saving...";
+      try {
+        saveLoadedSnapshot();
+      } finally {
+        quickSaveBtn.disabled = false;
+        quickSaveBtn.textContent = originalText;
+      }
     });
   }
 
