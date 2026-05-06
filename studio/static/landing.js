@@ -231,6 +231,32 @@ elEmbedUrl.addEventListener("input", () => {
   embedDebounce = setTimeout(() => fetchEmbedModels(false), 500);
 });
 
+async function testEmbedDirect(baseUrl, model, statusEl) {
+  const base = baseUrl.replace(/\/$/, "");
+  const attempts = [
+    [base + "/api/embed",      { model, input: "test" }],
+    [base + "/api/embeddings", { model, prompt: "test" }],
+    [base + "/v1/embeddings",  { model, input: "test" }],
+  ];
+  for (const [url, body] of attempts) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      let dim = null;
+      if (Array.isArray(data?.data?.[0]?.embedding)) dim = data.data[0].embedding.length;
+      else if (Array.isArray(data?.embeddings?.[0])) dim = data.embeddings[0].length;
+      else if (Array.isArray(data?.embedding)) dim = data.embedding.length;
+      return dim ? `OK — ${dim}-dim vector.` : "Connection OK.";
+    } catch (_) { continue; }
+  }
+  return null;
+}
+
 async function testEmbed() {
   const baseUrl = elEmbedUrl.value.trim();
   const model   = elEmbedModel.value;
@@ -239,23 +265,13 @@ async function testEmbed() {
     return;
   }
   setStatus(elEmbedSt, "Testing…", "");
-  try {
-    const resp = await fetch("/api/test-embed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, model }),
-    });
-    const data = resp.ok ? await resp.json() : null;
-    if (resp.ok && data && data.ok) {
-      setStatus(elEmbedSt, data.message || "Connection OK.", "ok");
-      updateSidebarEmbed(model, "ok");
-    } else {
-      setStatus(elEmbedSt, data?.message || "Could not reach embed endpoint.", "err");
-      updateSidebarEmbed("error", "err");
-    }
-  } catch (err) {
-    setStatus(elEmbedSt, `Could not reach ${baseUrl}: ${err.message || err}`, "err");
-    updateSidebarEmbed("unreachable", "err");
+  const msg = await testEmbedDirect(baseUrl, model, elEmbedSt);
+  if (msg) {
+    setStatus(elEmbedSt, msg, "ok");
+    updateSidebarEmbed(model, "ok");
+  } else {
+    setStatus(elEmbedSt, "Could not reach embed endpoint. Check URL, model, and CORS.", "err");
+    updateSidebarEmbed("error", "err");
   }
 }
 
@@ -271,18 +287,10 @@ document.getElementById("embed-save-btn").addEventListener("click", () => {
 
 if (embedStored.baseUrl) fetchEmbedModels(false);
 if (embedStored.baseUrl && embedStored.model) {
-  fetch("/api/test-embed", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ baseUrl: embedStored.baseUrl, model: embedStored.model }),
-  }).then(r => r.ok ? r.json() : null).then(data => {
-    if (data && data.ok) {
-      updateSidebarEmbed(embedStored.model, "ok");
-      setStatus(elEmbedSt, data.message || "Connection OK.", "ok");
-    } else {
-      updateSidebarEmbed(embedStored.model, "");
-    }
-  }).catch(() => { updateSidebarEmbed(embedStored.model, ""); });
+  testEmbedDirect(embedStored.baseUrl, embedStored.model).then(msg => {
+    if (msg) { updateSidebarEmbed(embedStored.model, "ok"); setStatus(elEmbedSt, msg, "ok"); }
+    else updateSidebarEmbed(embedStored.model, "");
+  });
 }
 
 // ── Classifier model ─────────────────────────────────────────
@@ -344,6 +352,25 @@ elClassUrl.addEventListener("input", () => {
   classDebounce = setTimeout(() => fetchClassifierModels(false), 500);
 });
 
+async function testClassifierDirect(baseUrl, model) {
+  const base = baseUrl.replace(/\/$/, "");
+  const attempts = [
+    [base + "/api/chat",            { model, messages: [{ role: "user", content: "ping" }], stream: false, options: { num_predict: 1 } }],
+    [base + "/v1/chat/completions", { model, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }],
+  ];
+  for (const [url, body] of attempts) {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (resp.ok) return `OK (${model}).`;
+    } catch (_) { continue; }
+  }
+  return null;
+}
+
 async function testClassifier() {
   const baseUrl = elClassUrl.value.trim();
   const model   = elClassModel.value;
@@ -352,23 +379,13 @@ async function testClassifier() {
     return;
   }
   setStatus(elClassSt, "Testing…", "");
-  try {
-    const resp = await fetch("/api/test-classifier", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, model }),
-    });
-    const data = resp.ok ? await resp.json() : null;
-    if (resp.ok && data && data.ok) {
-      setStatus(elClassSt, data.message || "Connection OK.", "ok");
-      updateSidebarClassifier(model, "ok");
-    } else {
-      setStatus(elClassSt, data?.message || "Could not reach classifier endpoint.", "err");
-      updateSidebarClassifier("error", "err");
-    }
-  } catch (err) {
-    setStatus(elClassSt, `Could not reach ${baseUrl}: ${err.message || err}`, "err");
-    updateSidebarClassifier("unreachable", "err");
+  const msg = await testClassifierDirect(baseUrl, model);
+  if (msg) {
+    setStatus(elClassSt, msg, "ok");
+    updateSidebarClassifier(model, "ok");
+  } else {
+    setStatus(elClassSt, "Could not reach classifier endpoint. Check URL, model, and CORS.", "err");
+    updateSidebarClassifier("error", "err");
   }
 }
 
@@ -384,18 +401,10 @@ document.getElementById("classifier-save-btn").addEventListener("click", () => {
 
 if (classStored.baseUrl) fetchClassifierModels(false);
 if (classStored.baseUrl && classStored.model) {
-  fetch("/api/test-classifier", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ baseUrl: classStored.baseUrl, model: classStored.model }),
-  }).then(r => r.ok ? r.json() : null).then(data => {
-    if (data && data.ok) {
-      updateSidebarClassifier(classStored.model, "ok");
-      setStatus(elClassSt, data.message || "Connection OK.", "ok");
-    } else {
-      updateSidebarClassifier(classStored.model, "");
-    }
-  }).catch(() => { updateSidebarClassifier(classStored.model, ""); });
+  testClassifierDirect(classStored.baseUrl, classStored.model).then(msg => {
+    if (msg) { updateSidebarClassifier(classStored.model, "ok"); setStatus(elClassSt, msg, "ok"); }
+    else updateSidebarClassifier(classStored.model, "");
+  });
 }
 
 // ── About slideshow ──────────────────────────────────────────
