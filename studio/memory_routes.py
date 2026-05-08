@@ -317,6 +317,7 @@ async def memory_generate(req: MemoryGenerateRequest, request: Request) -> dict[
             top_k=top_k,
             history_window=history_window,
             use_classifier=use_classifier,
+            auto_inject=bool(cfg.get("auto_inject")),
         )
 
         state  = RegistryState.from_dict(req.state)

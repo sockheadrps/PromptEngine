@@ -93,6 +93,7 @@ function createEmptyRegistryState() {
     sections: {},
     memory_rules: [],
     memory_config: {},
+    style_blend: {},
   };
 
   const optional = new Set(["static_injections", "runtime_injections", "memory_recall", "user_message", "groups"]);
@@ -206,6 +207,9 @@ function buildExportPayload() {
   const memCfg = readMemoryConfig();
   if (Object.keys(memCfg).length) {
     registry.memory_config = memCfg;
+  }
+  if (registryState.style_blend && Object.keys(registryState.style_blend).length) {
+    registry.style_blend = JSON.parse(JSON.stringify(registryState.style_blend));
   }
 
   SECTION_KEYS.forEach((key) => {
@@ -1010,6 +1014,14 @@ function updateInlineGroupItem(type, uiId, gIdx, iIdx, value) {
   exportFullModel();
 }
 
+function _refreshStyleBlendDropdowns(sec) {
+  const cfg = (registryState.style_blend || {})[sec] || {};
+  for (const role of ["primary", "secondary"]) {
+    const el = document.getElementById(`sb-${sec}-${role}`);
+    if (el) el.innerHTML = _sbItemOptions(sec, cfg[role] || "");
+  }
+}
+
 function renderItems(type) {
   const container = document.getElementById(`${type}-container`);
   container.innerHTML = "";
@@ -1168,6 +1180,9 @@ function renderItems(type) {
     container.appendChild(card);
   });
 
+  if (type === "personas" || type === "sentiment") {
+    _refreshStyleBlendDropdowns(type);
+  }
 }
 
 
@@ -1180,7 +1195,10 @@ function updateField(type, uiId, field, value) {
   } else {
     entry[field] = value;
   }
-  if (field === "id") renderAssemblyOrderEditor();
+  if (field === "id") {
+    renderAssemblyOrderEditor();
+    if (type === "personas" || type === "sentiment") _refreshStyleBlendDropdowns(type);
+  }
   exportFullModel();
 }
 
@@ -1238,6 +1256,9 @@ function applyRegistryJson(json) {
   next.memory_config = reg.memory_config && typeof reg.memory_config === "object"
     ? { ...reg.memory_config }
     : {};
+  next.style_blend = reg.style_blend && typeof reg.style_blend === "object"
+    ? JSON.parse(JSON.stringify(reg.style_blend))
+    : {};
 
   const knownTopLevel = new Set([
     "version",
@@ -1248,6 +1269,7 @@ function applyRegistryJson(json) {
     "output_policy",
     "memory_rules",
     "memory_config",
+    "style_blend",
     ...SECTION_KEYS,
   ]);
   // default_state and any other unrecognised top-level keys round-trip via extraTopLevel
@@ -1306,6 +1328,7 @@ function applyRegistryJson(json) {
 
   registryState = next;
   populateMemoryConfigInputs();
+  populateStyleBlendInputs();
 
   document.getElementById("model-version").value = registryState.version;
   document.getElementById("model-title-input").value = registryState.title;
@@ -1801,6 +1824,8 @@ function readMemoryConfig() {
   }
   const useClf = document.getElementById("mem-use-classifier");
   if (useClf && !useClf.checked) out.use_classifier = false;
+  const autoInj = document.getElementById("mem-auto-inject");
+  if (autoInj && autoInj.checked) out.auto_inject = true;
   return out;
 }
 
@@ -1971,7 +1996,62 @@ function populateMemoryConfigInputs() {
   }
   const useClf = document.getElementById("mem-use-classifier");
   if (useClf) useClf.checked = cfg.use_classifier !== false;
+  const autoInj = document.getElementById("mem-auto-inject");
+  if (autoInj) autoInj.checked = !!cfg.auto_inject;
   toggleClassifierSection();
+}
+
+function _sbItemOptions(secKey, currentValue) {
+  const items = registryState.sections[secKey]?.items || [];
+  const opts = [`<option value="">— select —</option>`];
+  for (const it of items) {
+    const id = it.id || it.name || "";
+    if (!id) continue;
+    const sel = id === currentValue ? " selected" : "";
+    opts.push(`<option value="${escapeHtml(id)}"${sel}>${escapeHtml(id)}</option>`);
+  }
+  return opts.join("");
+}
+
+function populateStyleBlendInputs() {
+  const sb = registryState.style_blend || {};
+
+  for (const sec of ["personas", "sentiment"]) {
+    const cfg = sb[sec] || {};
+    const enabled = !!cfg.primary;
+    const cbEl = document.getElementById(`sb-${sec}-enabled`);
+    if (cbEl) cbEl.checked = enabled;
+    const axEl = document.getElementById(`sb-${sec}-axis`);
+    if (axEl) axEl.value = cfg.axis || "warmth";
+    const prEl = document.getElementById(`sb-${sec}-primary`);
+    if (prEl) prEl.innerHTML = _sbItemOptions(sec, cfg.primary || "");
+    const seEl = document.getElementById(`sb-${sec}-secondary`);
+    if (seEl) seEl.innerHTML = _sbItemOptions(sec, cfg.secondary || "");
+    const thEl = document.getElementById(`sb-${sec}-threshold`);
+    if (thEl) thEl.value = cfg.threshold ?? "";
+    const confEl = document.getElementById(`sb-${sec}-config`);
+    if (confEl) confEl.hidden = !enabled;
+  }
+}
+
+function updateStyleBlend() {
+  const sb = {};
+  for (const sec of ["personas", "sentiment"]) {
+    const enabled = document.getElementById(`sb-${sec}-enabled`)?.checked;
+    if (!enabled) continue;
+    const axis = document.getElementById(`sb-${sec}-axis`)?.value || "warmth";
+    const primary = document.getElementById(`sb-${sec}-primary`)?.value?.trim() || "";
+    const secondary = document.getElementById(`sb-${sec}-secondary`)?.value?.trim() || "";
+    const thRaw = document.getElementById(`sb-${sec}-threshold`)?.value;
+    const threshold = thRaw !== "" && thRaw != null ? parseFloat(thRaw) : 0.6;
+    if (primary || secondary) {
+      sb[sec] = { axis, primary, secondary, threshold };
+    }
+    const confEl = document.getElementById(`sb-${sec}-config`);
+    if (confEl) confEl.hidden = !enabled;
+  }
+  registryState.style_blend = sb;
+  exportFullModel();
 }
 
 function addMemoryRule() {
@@ -2025,13 +2105,27 @@ function updateMemoryAction(ruleIdx, actionIdx, field, value) {
     if (value === "inject") { action.section = "runtime_injections"; action.item = ""; }
     else if (value === "persona" || value === "sentiment") { action.value = ""; }
     else if (value === "template_var") { action.key = ""; action.value = ""; }
+    else if (value === "emotion") { action.deltas = {}; }
   }
   renderMemoryRulesPanel();
   exportFullModel();
 }
 
+function updateMemoryActionDelta(ruleIdx, actionIdx, dim, rawValue) {
+  const action = registryState.memory_rules[ruleIdx]?.actions[actionIdx];
+  if (!action) return;
+  if (!action.deltas) action.deltas = {};
+  const v = parseFloat(rawValue);
+  if (rawValue === "" || rawValue == null || isNaN(v)) {
+    delete action.deltas[dim];
+  } else {
+    action.deltas[dim] = Math.max(-1, Math.min(1, v));
+  }
+  exportFullModel();
+}
+
 function _memActionEditor(ruleIdx, actionIdx, action) {
-  const typeOpts = ["inject", "persona", "sentiment", "template_var"]
+  const typeOpts = ["inject", "persona", "sentiment", "template_var", "emotion"]
     .map((t) => `<option value="${t}" ${action.type === t ? "selected" : ""}>${t}</option>`)
     .join("");
 
@@ -2067,6 +2161,16 @@ function _memActionEditor(ruleIdx, actionIdx, action) {
         oninput="updateMemoryAction(${ruleIdx},${actionIdx},'key',this.value)">
       <input class="mem-action-field" type="text" value="${escapeHtml(action.value || "")}" placeholder="var value"
         oninput="updateMemoryAction(${ruleIdx},${actionIdx},'value',this.value)">`;
+  } else if (action.type === "emotion") {
+    const dims = ["warmth", "tension", "trust", "playfulness"];
+    const deltas = action.deltas || {};
+    targetHtml = `<div class="mem-action-emotion-grid">` +
+      dims.map((dim) => `
+        <label class="mem-action-dim-label">${escapeHtml(dim)}</label>
+        <input class="mem-action-field mem-action-dim-input" type="number" step="0.05" min="-1" max="1"
+          value="${deltas[dim] != null ? deltas[dim] : ""}" placeholder="±0.0…1.0"
+          oninput="updateMemoryActionDelta(${ruleIdx},${actionIdx},'${dim}',this.value)">
+      `).join("") + `</div>`;
   }
 
   return `<div class="mem-action-row">

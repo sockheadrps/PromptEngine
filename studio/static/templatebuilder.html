@@ -234,6 +234,10 @@
                   <input id="mem-use-classifier" type="checkbox" checked onchange="toggleClassifierSection(); exportFullModel()" />
                   <span>use_classifier <span class="label-hint">run LLM classifier to extract tags</span></span>
                 </label>
+                <label class="mem-toggle-row">
+                  <input id="mem-auto-inject" type="checkbox" onchange="exportFullModel()" />
+                  <span>auto_inject <span class="label-hint">append memory recall to prompt when no memory_recall section exists</span></span>
+                </label>
                 <div id="mem-classifier-section">
                   <label><span>classifier_url <span class="label-hint">base URL for tag classifier</span></span>
                     <input id="mem-classifier-url" type="text" placeholder="http://localhost:8080" value="http://localhost:8080" oninput="exportFullModel()" />
@@ -293,6 +297,72 @@
                 <label><span>personality_file <span class="label-hint">leave blank for workspace + registry default</span></span>
                   <input id="mem-personality-file" type="text" placeholder="personality.json" oninput="exportFullModel()" />
                 </label>
+              </div>
+
+            </div>
+          </section>
+
+          <section class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Style Blend</span>
+                <span class="panel-note">Blend between persona and sentiment items as emotional state shifts. Requires emotional state to be enabled in the ensemble.</span>
+              </div>
+            </div>
+            <div class="mem-config-grid">
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Personas</div>
+                <label class="mem-toggle-row">
+                  <input type="checkbox" id="sb-personas-enabled" onchange="updateStyleBlend()" />
+                  <span>Enable persona blend</span>
+                </label>
+                <div id="sb-personas-config" hidden>
+                  <label><span>axis <span class="label-hint">emotion dimension that drives the blend</span></span>
+                    <select id="sb-personas-axis" onchange="updateStyleBlend()">
+                      <option value="warmth">warmth</option>
+                      <option value="tension">tension</option>
+                      <option value="trust">trust</option>
+                      <option value="playfulness">playfulness</option>
+                    </select>
+                  </label>
+                  <label><span>primary <span class="label-hint">item when dimension is at or below threshold</span></span>
+                    <select id="sb-personas-primary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>secondary <span class="label-hint">item blended in as dimension rises</span></span>
+                    <select id="sb-personas-secondary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>threshold <span class="label-hint">activation point 0–1 (default 0.60)</span></span>
+                    <input id="sb-personas-threshold" type="number" step="0.05" min="0" max="1" placeholder="0.60" oninput="updateStyleBlend()" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Sentiment</div>
+                <label class="mem-toggle-row">
+                  <input type="checkbox" id="sb-sentiment-enabled" onchange="updateStyleBlend()" />
+                  <span>Enable sentiment blend</span>
+                </label>
+                <div id="sb-sentiment-config" hidden>
+                  <label><span>axis</span>
+                    <select id="sb-sentiment-axis" onchange="updateStyleBlend()">
+                      <option value="warmth">warmth</option>
+                      <option value="tension">tension</option>
+                      <option value="trust">trust</option>
+                      <option value="playfulness">playfulness</option>
+                    </select>
+                  </label>
+                  <label><span>primary</span>
+                    <select id="sb-sentiment-primary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>secondary</span>
+                    <select id="sb-sentiment-secondary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>threshold</span>
+                    <input id="sb-sentiment-threshold" type="number" step="0.05" min="0" max="1" placeholder="0.65" oninput="updateStyleBlend()" />
+                  </label>
+                </div>
               </div>
 
             </div>

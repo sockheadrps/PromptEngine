@@ -15,7 +15,7 @@ const aboutModal = document.getElementById('about-modal');
 document.getElementById('about-open-btn').addEventListener('click', () => { aboutModal.hidden = false; });
 document.getElementById('about-close-btn').addEventListener('click', () => { aboutModal.hidden = true; });
 aboutModal.addEventListener('click', e => { if (e.target === aboutModal) aboutModal.hidden = true; });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { aboutModal.hidden = true; connHelpModal.hidden = true; } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { aboutModal.hidden = true; connHelpModal.hidden = true; memoryHelpModal.hidden = true; } });
 
 // ── Connection help modal ────────────────────────────────────
 const connHelpModal = document.getElementById('conn-help-modal');
@@ -24,6 +24,44 @@ document.querySelectorAll("#conn-help-origin-win, #conn-help-origin-nix").forEac
 document.getElementById('conn-help-btn').addEventListener('click', () => { connHelpModal.hidden = false; });
 document.getElementById('conn-help-close-btn').addEventListener('click', () => { connHelpModal.hidden = true; });
 connHelpModal.addEventListener('click', e => { if (e.target === connHelpModal) connHelpModal.hidden = true; });
+
+// ── Memory help modal ────────────────────────────────────────
+const memoryHelpModal = document.getElementById('memory-help-modal');
+document.getElementById('memory-help-btn').addEventListener('click', () => { memoryHelpModal.hidden = false; });
+document.getElementById('memory-help-close-btn').addEventListener('click', () => { memoryHelpModal.hidden = true; });
+memoryHelpModal.addEventListener('click', e => { if (e.target === memoryHelpModal) memoryHelpModal.hidden = true; });
+
+// ── Memory slideshow ─────────────────────────────────────────
+const memSlides = Array.from(document.querySelectorAll('.mem-slide'));
+const memDotsEl = document.getElementById('mem-dots');
+const memPrevBtn = document.getElementById('mem-prev');
+const memNextBtn = document.getElementById('mem-next');
+let currentMemSlide = 0;
+
+memSlides.forEach((_, i) => {
+  const dot = document.createElement('div');
+  dot.className = 'about-dot' + (i === 0 ? ' active' : '');
+  dot.addEventListener('click', () => goToMem(i));
+  memDotsEl.appendChild(dot);
+});
+
+function goToMem(idx) {
+  memSlides[currentMemSlide].classList.remove('active');
+  memDotsEl.children[currentMemSlide].classList.remove('active');
+  currentMemSlide = Math.max(0, Math.min(idx, memSlides.length - 1));
+  memSlides[currentMemSlide].classList.add('active');
+  memDotsEl.children[currentMemSlide].classList.add('active');
+  memPrevBtn.disabled = currentMemSlide === 0;
+  memNextBtn.disabled = currentMemSlide === memSlides.length - 1;
+  const step = currentMemSlide + 1;
+  document.querySelectorAll('#memory-diagram [data-mstep]').forEach(el => {
+    el.style.opacity = parseInt(el.dataset.mstep, 10) <= step ? '1' : '0.25';
+  });
+}
+
+memPrevBtn.addEventListener('click', () => goToMem(currentMemSlide - 1));
+memNextBtn.addEventListener('click', () => goToMem(currentMemSlide + 1));
+goToMem(0);
 
 window.chSwitchCorsTab = function(which) {
   document.getElementById("ch-cors-tab-win").hidden = which !== "win";

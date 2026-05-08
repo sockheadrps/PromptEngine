@@ -418,6 +418,7 @@ class Registry:
     output_policy: dict[str, Any] = field(default_factory=dict)
     memory_rules: list[dict[str, Any]] = field(default_factory=list)
     memory_config: dict[str, Any] = field(default_factory=dict)
+    style_blend: dict[str, Any] = field(default_factory=dict)
     default_state: Optional[RegistryState] = None
 
     def to_dict(self, *, wrap: bool = True) -> dict[str, Any]:
@@ -443,6 +444,8 @@ class Registry:
             body["memory_rules"] = list(self.memory_rules)
         if self.memory_config:
             body["memory_config"] = dict(self.memory_config)
+        if self.style_blend:
+            body["style_blend"] = dict(self.style_blend)
         if self.default_state:
             body["default_state"] = self.default_state.to_dict()
         return {"registry": body} if wrap else body
@@ -461,7 +464,7 @@ class Registry:
         RESERVED = {
             "version", "title", "description", "assembly_order",
             "routes", "generation", "output_policy", "memory_rules",
-            "memory_config", "default_state",
+            "memory_config", "style_blend", "default_state",
         }
 
         sections: dict[str, Section] = {}
@@ -493,5 +496,6 @@ class Registry:
             output_policy=dict(data.get("output_policy") or {}),
             memory_rules=list(data.get("memory_rules") or []),
             memory_config=dict(data.get("memory_config") or {}),
+            style_blend=dict(data.get("style_blend") or {}),
             default_state=default_state,
         )

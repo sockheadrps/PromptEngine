@@ -480,6 +480,8 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     "memory_recall",
     "system_summary",
     "rule_ending",
+    "working_notes",
+    "emotional_state",
   ]);
 
   function collectMissingTvars() {
@@ -1529,7 +1531,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     refreshSectionPreviews();
     refreshMemoryUI();
     _memorySessionId = null;
-    fetch("/api/memory/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }).catch(() => {});
+    fetch("/api/memory/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ registry: { registry } }) }).catch(() => {});
   }
 
   function consumeBuilderHandoff() {

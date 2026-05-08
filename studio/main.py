@@ -22,6 +22,7 @@ from .config import MULTI_TENANT, USER_ID_COOKIE
 from .registry_routes import router as registry_router
 from .ensemble_routes import router as ensemble_router
 from .memory_routes import router as memory_router
+from .builder_routes import router as builder_router
 
 app = FastAPI(title="promptlibretto studio")
 
@@ -47,6 +48,7 @@ if MULTI_TENANT:
 app.include_router(registry_router)
 app.include_router(ensemble_router)
 app.include_router(memory_router)
+app.include_router(builder_router)
 
 
 _static_dir = Path(__file__).parent / "static"
@@ -68,6 +70,11 @@ def studio_page() -> FileResponse:
 @app.get("/builder")
 def builder() -> FileResponse:
     return FileResponse(_static_dir / "templatebuilder.html")
+
+
+@app.get("/assistant")
+def chat_builder() -> FileResponse:
+    return FileResponse(_static_dir / "chatbuilder.html")
 
 
 @app.get("/ensemble")

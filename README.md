@@ -226,6 +226,60 @@ Built-in providers:
 - `MockProvider`
 - `OllamaProvider`
 
+## Memory
+
+`MemoryEngine` wraps the core `Engine` with local persistent memory: semantic retrieval, classifier-driven state mutation, emotional state, working notes, and system summaries.
+
+```bash
+pip install "promptlibretto[memory]"
+ollama pull nomic-embed-text
+```
+
+```python
+from promptlibretto.memory import MemoryEngine
+
+mem = MemoryEngine(
+    engine=eng,
+    session_id="user-123",
+    embed_url="http://localhost:11434",
+    embed_model="nomic-embed-text",
+)
+
+prepared = await mem.prepare(user_input, base_state=state)
+result = await eng.run(prepared.state)
+await mem.record_turn(user_input, role="user")
+await mem.record_turn(result.text, role="assistant")
+```
+
+Memory is configured in the registry under `memory_config` and `memory_rules`:
+
+```json
+{
+  "memory_config": {
+    "top_k": 6,
+    "working_notes_enabled": true,
+    "system_summary_enabled": true,
+    "emotional_state_enabled": true,
+    "emotion_dimensions": ["warmth", "tension", "trust"],
+    "emotion_decay_rate": 0.05
+  },
+  "memory_rules": [
+    {
+      "tag": "conflict",
+      "description": "User is expressing frustration or disagreement.",
+      "actions": [{ "type": "emotion", "deltas": { "tension": 0.15, "warmth": -0.1 } }],
+      "ending_text": "Acknowledge the friction directly before continuing."
+    }
+  ]
+}
+```
+
+`memory_rules` define tags the classifier can match. Each rule can carry `actions` (emotion deltas that shift the participant's emotional state) and an `ending_text` directive injected into the prompt for that turn.
+
+The `memory_recall` section receives retrieved context and working notes via the `{memory_recall}` template variable. `prompt_endings` receives `{system_summary}` and `{rule_ending}`.
+
+See `MEMORY_DESIGN.md` for architecture details and `MEMORY_EXTENSIONS_PLAN.md` for planned extensions.
+
 ## Studio
 
 The studio is a browser toolset for building and testing registries.
@@ -237,9 +291,10 @@ promptlibretto-studio --port 8000
 
 - **Studio** (`/`) — runtime tuning: load a registry, select items, adjust state, preview prompt, generate.
 - **Builder** (`/builder`) — visual authoring: build registry JSON from forms and open in Studio.
-- **Ensemble** (`/ensemble`) — two-participant conversation, model-vs-model or model-vs-human, with optional per-participant memory.
+- **Chat Builder** (`/chatbuilder`) — conversation-driven registry builder: describe what you want and an AI assistant builds the registry through guided tool calls.
+- **Ensemble** (`/ensemble`) — two-participant conversation, model-vs-model or model-vs-human, with optional per-participant memory pipeline.
 
-Registry JSON is the shared contract between the library and all three tools. Anything you build in Builder is immediately usable from Python via `Registry.from_dict()`.
+Registry JSON is the shared contract between the library and all four tools. Anything you build in Builder or Chat Builder is immediately usable from Python via `Registry.from_dict()`.
 
 ## Development
 

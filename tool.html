@@ -1254,7 +1254,7 @@
 
         memory_config:
           'Memory configuration defines where the runtime memory services live and how semantic recall operates. The classifier URL and model handle tag detection for rules like order_number, while the embedding service converts conversation turns into vectors for semantic search and retrieval. Here classifier use is enabled, top_k is 45 for broad recall, and prune_keep is 3 so the retained memory set stays tight after retrieval.',
-      };
+        };
 
       function scriptBlock(key) {
         const text = SECTION_SCRIPTS[key];
@@ -1370,8 +1370,10 @@
           }
         });
       }
+      
 
       renderRegistry();
     </script>
   </body>
 </html>
+<Details></Details>
