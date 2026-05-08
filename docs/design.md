@@ -123,8 +123,32 @@ With no route active, the top-level registry assembly order and config are used.
 
 Registries may include `memory_rules` and `memory_config` to enable the memory layer.
 
-`memory_rules` maps tags to `RegistryState` mutations (inject, persona, sentiment, template_var actions). The classifier extracts matching tags from user input and retrieved past turns; the router applies the corresponding mutations before hydration.
+`memory_rules` maps tags to `RegistryState` mutations (inject, persona, sentiment, template_var actions), emotion deltas, and debt side-effects (`opens_debt` / `closes_debt`). The classifier extracts matching tags from user input and retrieved past turns; the router applies mutations before hydration.
 
-`memory_config` sets classifier model, top-k retrieval count, and optional personality file path.
+`memory_config` keys:
 
-See `MEMORY_DESIGN.md` for the full memory architecture.
+| Key | Purpose |
+|---|---|
+| `top_k` | Number of past turns to retrieve per query |
+| `history_window` | Recent turns to include verbatim in recall |
+| `embed_model` | Ollama embedding model (default `nomic-embed-text`) |
+| `classifier_model` | Tag-extraction model (default `llama3.2:1b`) |
+| `working_notes_enabled` | Background running-notes side-call |
+| `system_summary_enabled` | Background system-prompt compression |
+| `emotional_state_enabled` | Per-participant emotion vector |
+| `emotion_dimensions` | Dimension names (default `["warmth","tension","trust","playfulness"]`) |
+| `emotion_decay_rate` | Pull-toward-neutral rate per turn (default `0.05`) |
+| `debt_enabled` | Persistent unresolved-thread tracking |
+| `episodic_enabled` | Compressed session-level episode store |
+| `relationship_enabled` | Cross-session relationship arc reflections |
+| `relationship_reflect_every_n_turns` | How often to generate a reflection (default `10`) |
+| `auto_inject` | Append recall to system prompt when no section declares `{memory_recall}` |
+
+Template variables injected by `MemoryEngine.prepare()`:
+
+- `{memory_recall}` — combined block: debt threads, system summary, working notes, past episodes, recent conversation, retrieved cross-session chunks
+- `{emotional_state}` — current emotion vector as human-readable text
+- `{relationship_context}` — accumulated relationship arc observations
+- `{working_notes}`, `{system_summary}`, `{rule_ending}`, `{user_input}`, `{other_name}`, `{thoughts_about_other}`
+
+See `MEMORY_DESIGN.md` for the full architecture.

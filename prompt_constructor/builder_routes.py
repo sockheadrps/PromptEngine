@@ -1,5 +1,5 @@
 """
-studio/builder_routes.py
+prompt_constructor/builder_routes.py
 
 POST /api/builder/chat — agentic registry builder.
 

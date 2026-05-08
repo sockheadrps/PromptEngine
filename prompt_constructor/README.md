@@ -1,6 +1,6 @@
-# promptlibretto studio
+# Prompt Constructor
 
-Browser-based prompt designer for the `promptlibretto` library. Load a
+Browser-based prompt constructor for the `promptlibretto` library. Load a
 registry, tune selections and runtime modes against a live local model,
 and export the final JSON to drop into your app.
 
@@ -9,13 +9,15 @@ Full docs: **[sockheadrps.github.io/promptlibretto/server](https://sockheadrps.g
 ## Run it
 
 ```bash
-pip install "promptlibretto[studio,ollama]"
-promptlibretto-studio --port 8000
+pip install "promptlibretto[prompt-constructor,ollama]"
+prompt-constructor --port 8000
 ```
 
 Open <http://localhost:8000>.
 
 ## Pages
+
+![Prompt Constructor home](../docs/assets/screenshots/home.png)
 
 ### Studio (`/`)
 
@@ -42,9 +44,7 @@ Sections split across two tabs:
   `max_prompt_chars` is currently stored/exported but not enforced by
   the engine.
 
-![Studio Compose view](../docs/assets/screenshots/studio-compose.png)
-
-![Studio Tuning view](../docs/assets/screenshots/studio-tuning.png)
+![Studio workspace](../docs/assets/screenshots/studio.png)
 
 Hit **Pre-generate** to see the assembled prompt, then **Generate** to
 send it browser-direct to your local Ollama. Browser-direct generation
@@ -53,10 +53,6 @@ policy validation or retries. The stream toggle streams tokens as they
 arrive. **Export Model JSON** copies the full
 registry — selections, modes, sliders, and generation overrides baked
 in — ready for `load_registry()` in your app.
-
-![Pre-generate review](../docs/assets/screenshots/studio-pregenerate.png)
-
-![Generated output](../docs/assets/screenshots/studio-output.png)
 
 ### Builder (`/builder`)
 
@@ -71,16 +67,26 @@ Visual form for constructing a new registry from scratch.
 - **Open in Studio** — sends the registry to the Studio tab via
   `localStorage`.
 
-![Builder overview](../docs/assets/screenshots/builder-overview.png)
+![Builder workspace](../docs/assets/screenshots/builder.png)
+
+### Chat Builder (`/assistant`)
+
+Conversation-driven registry authoring. Describe what you want, let the assistant build or edit a draft through guided tool calls, then send the result into Studio.
+
+![Chat Builder workspace](../docs/assets/screenshots/assistant.png)
+
+### Ensemble (`/ensemble`)
+
+Two-participant conversations: model-vs-model or model-vs-human, with optional per-participant memory, working notes, system summary, emotional state, debt tracking, episodic compression, and relationship arc reflections.
+
+![Ensemble workspace](../docs/assets/screenshots/ensamble.png)
 
 ## Connection
 
-The studio calls your local LLM directly from the browser after using
+Prompt Constructor calls your local LLM directly from the browser after using
 the backend to hydrate the prompt. Click the connection chip in the
 header to set the base URL, chat path, payload shape (Ollama /
 OpenAI-compatible), and model. Settings persist in `localStorage`.
-
-![Connection settings](../docs/assets/screenshots/connection-modal.png)
 
 ## Snapshots
 
@@ -89,11 +95,9 @@ registry, selections, modes, sliders, template vars, generation
 overrides. Storage is `localStorage`; snapshots persist across
 reloads but stay on the device.
 
-![Snapshots modal](../docs/assets/screenshots/snapshots-modal.png)
-
 ## Registry HTTP API
 
-The studio also exposes these endpoints for headless use:
+Prompt Constructor also exposes these endpoints for headless use:
 
 | Endpoint                      | Purpose                                   |
 | ----------------------------- | ----------------------------------------- |

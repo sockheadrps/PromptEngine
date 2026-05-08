@@ -10,11 +10,11 @@ existing `promptlibretto/memory/` package.
 
 ```
 1. Memory Confidence      ✅ shipped  — confidence.py, store decay + boost
-2. Memory Debt            ⬜ unbuilt  — new layer, no deps
+2. Memory Debt            ✅ shipped  — new layer, no deps
 3. Emotional State Decay  ✅ shipped  — emotional_state.py, router "emotion" actions
-4. Reflection Turns       ⬜ unbuilt  — new layer, benefits from personality
+4. Reflection Turns       ✅ shipped  — new layer, benefits from personality
 5. Style Modulation       ✅ shipped  — style_blend.py, blends on emotional state
-6. Episodic Compression   ⬜ unbuilt  — new storage tier, benefits from confidence
+6. Episodic Compression   ✅ shipped  — new storage tier, benefits from confidence
 ```
 
 Feature 5 requires feature 3. Feature 6 is richer with feature 1.
@@ -675,11 +675,11 @@ from the turns they compress, with their own decay curve.
 | # | Status | Feature | New file | Key change | Deps |
 |---|---|---|---|---|---|
 | 1 | ✅ | Memory confidence | `confidence.py` | `MemoryTurn.confidence`, decay at retrieval, hedged rendering | none |
-| 2 | ⬜ | Memory debt | `debt.py` | `MemoryDebtLayer`, router side-effects, debt in recall | none |
+| 2 | ✅ | Memory debt | `debt.py` | `MemoryDebtLayer`, router side-effects, debt in recall | none |
 | 3 | ✅ | Emotional state decay | `emotional_state.py` | `EmotionalStateLayer`, router `"emotion"` action, decay per turn | none |
-| 4 | ⬜ | Reflection turns | `relationship.py` | `RelationshipLayer`, background reflect call, `{relationship_context}` var | none |
+| 4 | ✅ | Reflection turns | `relationship.py` | `RelationshipLayer`, background reflect call, `{relationship_context}` var | none |
 | 5 | ✅ | Style modulation | `style_blend.py` | Blend function using emotional state → persona/sentiment weights | #3 |
-| 6 | ⬜ | Episodic compression | `episode.py` | `EpisodeStore`, second retrieval tier, compression on session end | none (#1 optional) |
+| 6 | ✅ | Episodic compression | `episode.py` | `EpisodeStore`, second retrieval tier, compression on session end | none (#1 optional) |
 
 All six are additive to the existing library. No existing behaviour changes.
 Each is gated by a flag in `memory_config` and off by default.

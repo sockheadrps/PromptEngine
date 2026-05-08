@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from studio import memory_routes
+from prompt_constructor import memory_routes
 
 
 def _request(workspace: str = "workspace-123") -> SimpleNamespace:

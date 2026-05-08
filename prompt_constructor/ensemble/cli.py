@@ -1,9 +1,9 @@
-"""ensemble — two registry-driven models talking to each other.
+"""prompt_constructor.ensemble — two registry-driven models talking to each other.
 
 Usage:
-    python -m ensemble.cli \\
-        --registry-a ensemble/configs/philosopher.json \\
-        --registry-b ensemble/configs/skeptic.json \\
+    python -m prompt_constructor.ensemble.cli \\
+        --registry-a prompt_constructor/ensemble/configs/philosopher.json \\
+        --registry-b prompt_constructor/ensemble/configs/skeptic.json \\
         --model-a llama3 \\
         --model-b llama3 \\
         --turns 8 \\
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import sys
 
 from promptlibretto import load_registry
 

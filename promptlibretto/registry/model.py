@@ -161,9 +161,13 @@ class DynamicMixin:
 class ScalableMixin:
     """Adds a Scale to an item (e.g. Sentiment)."""
 
-    scale: Scale = field(default_factory=Scale)
+    scale: Optional[Scale] = None
 
     def _scale_dict(self) -> dict[str, Any]:
+        if self.scale is None:
+            return {}
+        if isinstance(self.scale, dict):
+            return {"scale": dict(self.scale)}
         return {"scale": dataclasses.asdict(self.scale)}
 
 

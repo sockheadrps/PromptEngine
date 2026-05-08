@@ -44,23 +44,28 @@ ollama pull nomic-embed-text           # or mxbai-embed-large
 user input
     │
     ▼
-┌─────────────────────────────────────────┐
-│              MemoryEngine               │
-│                                         │
-│  1. embed(input) → vector               │
-│  2. store.retrieve(vector, top_k=5)     │  ← MemoryStore (sqlite-vec)
-│  3. classifier_call(input, chunks)      │  ← OllamaProvider (small model)
-│     → tags: ["past_conflict", ...]      │
-│  4. router.mutate(base_state, tags)     │  ← Router (registry rules)
-│     → adjusted RegistryState           │
-│  5. personality.merge(state)            │  ← PersonalityLayer (JSON file)
-│  6. inject template vars into state     │  ← memory_recall, working_notes, etc.
-│  7. engine.hydrate(state)              │  ← existing Engine (unchanged)
-│  8. provider.generate(prompt)          │
-│  9. store.upsert(input, response)       │  ← write turn back to memory
-│ 10. working_notes.update() [background] │  ← fire-and-forget side call
-│                                         │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                    MemoryEngine                      │
+│                                                      │
+│  1. embed(input) → vector                            │
+│  2. store.retrieve(vector, top_k)                    │  ← MemoryStore (sqlite-vec turns)
+│  3. episode_store.retrieve(vector, top_k) [optional] │  ← EpisodeStore (compressed sessions)
+│  4. classifier_call(input, chunks)                   │  ← OllamaProvider (small model)
+│     → tags: ["past_conflict", ...]                   │
+│  5. router.mutate(base_state, tags)                  │  ← Router (registry rules)
+│     → (RegistryState, emotion_deltas, debt_effects)  │
+│  6. debt.apply(debt_effects) [optional]              │  ← MemoryDebtLayer (JSON file)
+│  7. personality.merge(state) [optional]              │  ← PersonalityLayer (JSON file)
+│  8. emotional_state.apply_deltas_and_decay()         │  ← EmotionalStateLayer (JSON file)
+│  9. inject template vars into state                  │  ← memory_recall, emotional_state,
+│                                                      │     relationship_context, etc.
+│ 10. engine.hydrate(state)                            │  ← existing Engine (unchanged)
+│ 11. provider.generate(prompt)                        │
+│ 12. store.upsert(input, response)                    │  ← write turn back to memory
+│ 13. working_notes.update() [background]              │  ← fire-and-forget side call
+│ 14. relationship.reflect() [background, optional]    │  ← RelationshipLayer (JSON file)
+│                                                      │
+└──────────────────────────────────────────────────────┘
     │
     ▼
 GenerationResult (same shape as today)
@@ -78,9 +83,13 @@ promptlibretto/
     store.py             # MemoryStore — sqlite-vec: upsert, retrieve, forget
     personality.py       # PersonalityLayer — load / amend / save base context JSON
     classifier.py        # Classifier — tag extraction via small LLM call
-    router.py            # Router — tag → RegistryState mutations
+    router.py            # Router — tag → RegistryState mutations + emotion deltas + debt effects
     working_notes.py     # WorkingNotesLayer — running per-participant notes updated every N turns
     system_summary.py    # SystemSummaryLayer — compressed system prompt updated every N turns
+    emotional_state.py   # EmotionalStateLayer — per-participant emotion vector, decay per turn
+    debt.py              # MemoryDebtLayer — persistent open-thread list, opened/closed by rules
+    episode.py           # EpisodeStore — compressed session summaries, second retrieval tier
+    relationship.py      # RelationshipLayer — cross-session relationship arc, background reflections
     engine.py            # MemoryEngine — orchestrates all of the above
     ws_embedder.py       # WsEmbedder — delegates embed calls to a browser WebSocket
     ws_provider.py       # WsProvider — delegates chat calls to a browser WebSocket
@@ -499,7 +508,9 @@ injected there.
 
 | Variable | Content |
 |---|---|
-| `memory_recall` | History, retrieved cross-session chunks, working notes, and system summary — all formatted as one block |
+| `memory_recall` | Combined block: unresolved debt threads, system summary, working notes, past episode summaries, recent conversation, retrieved cross-session chunks |
+| `emotional_state` | Current emotional state as human-readable text (e.g. "warmth: high, tension: moderate") |
+| `relationship_context` | Accumulated relationship arc observations, formatted as "Relationship arc:\n- I've noticed…" |
 | `working_notes` | Running notes text only (without history or retrieved chunks) |
 | `system_summary` | Compressed system prompt text (empty string if no summary exists yet) |
 | `user_input` | The current user message |
@@ -508,10 +519,10 @@ injected there.
 | `thoughts_about_other` | Retrieved chunks about the other speaker (Ensemble only) |
 
 **`memory_recall` is the recommended way to expose memory context.** It
-automatically includes working notes and system summary when they exist, so a
-single `{memory_recall}` placeholder covers all three. Use `working_notes` or
-`system_summary` as standalone vars only when you need them in a different
-position in the prompt.
+automatically includes all active sub-layers (working notes, system summary,
+debt threads, episode summaries) when they exist, so a single `{memory_recall}`
+placeholder covers everything. Use the individual vars only when you need them
+in a different position in the prompt.
 
 **`system_summary` injects the actual compressed text** (not an empty string).
 Previously this was intentionally blank because summary was embedded in
@@ -689,16 +700,20 @@ if mem_engine.system_summary:
 All components are shipped.
 
 1. `OllamaEmbedder` — hits `/api/embed`, returns vectors.
-2. `MemoryStore` — sqlite-vec schema, upsert, retrieve, prune.
+2. `MemoryStore` — sqlite-vec schema, upsert, retrieve, prune, confidence decay/boost.
 3. `Classifier` — single LLM call, JSON parse, graceful fallback.
-4. `Router` — pure Python, no I/O. Reads `memory_rules` from registry.
-5. `MemoryEngine` — orchestrates 1–4 around the existing `Engine`.
+4. `Router` — pure Python, no I/O. Reads `memory_rules` from registry. Returns emotion deltas and debt side-effects alongside mutated state.
+5. `MemoryEngine` — orchestrates all layers around the existing `Engine`.
 6. `PersonalityLayer` — load/save JSON, post-session amendment call.
 7. `WorkingNotesLayer` / `SystemSummaryLayer` — fire-and-forget side-call layers.
-8. Registry schema — `memory_rules`, `memory_config` fields live in the registry model.
-9. Builder UI — Memory Config tab, memory rules panel, ensemble memory toggles.
+8. `EmotionalStateLayer` — per-participant float vector; dimensions decay toward neutral each turn; rules apply deltas; injected as `{emotional_state}`.
+9. `MemoryDebtLayer` — persistent JSON list of open threads; rules open/close entries; injected into `memory_recall` as "Unresolved threads".
+10. `EpisodeStore` — second sqlite-vec tier in the same `.db`; compresses session turns into a single embedded `Episode` on session end; retrieved episodes appear in `memory_recall` as "Past episodes".
+11. `RelationshipLayer` — persistent cross-session relationship arc; background side-call every N turns generates a one-sentence observation; injected as `{relationship_context}`.
+12. Registry schema — `memory_rules`, `memory_config` fields live in the registry model.
+13. Builder UI — Memory Config tab, memory rules panel, ensemble memory toggles (working notes, system summary, emotional state, debt, episodic, relationship arc).
 
-Steps 1–7 are pure library. Step 8 is a schema addition. Step 9 is UI only.
+Steps 1–11 are pure library. Step 12 is a schema addition. Step 13 is UI only.
 
 ---
 

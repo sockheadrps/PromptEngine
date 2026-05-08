@@ -9,8 +9,11 @@ from ..registry.engine import Engine, GenerationResult
 from ..registry.state import RegistryState, SectionState
 from ..providers.base import ProviderAdapter
 from .classifier import Classifier, ClassifierResult
+from .debt import MemoryDebtLayer
 from .emotional_state import EmotionalStateLayer
+from .episode import EpisodeChunk, EpisodeStore
 from .personality import PersonalityLayer
+from .relationship import RelationshipLayer
 from .router import Router
 from .store import MemoryChunk, MemoryStore, MemoryTurn
 from .system_summary import SystemSummaryLayer
@@ -76,6 +79,13 @@ class MemoryEngine:
         use_classifier: bool = True,
         auto_inject: bool = False,
         emotional_state: Optional[EmotionalStateLayer] = None,
+        debt: Optional[MemoryDebtLayer] = None,
+        episode_store: Optional[EpisodeStore] = None,
+        episode_top_k: int = 3,
+        relationship: Optional[RelationshipLayer] = None,
+        relationship_reflect_every_n_turns: int = 10,
+        relationship_max_tokens: int = 150,
+        relationship_max_entries: int = 20,
         emotion_decay_rate: float = 0.05,
         confidence_decay_rate: float = 0.02,
         confidence_confirmation_threshold: float = 0.25,
@@ -117,6 +127,14 @@ class MemoryEngine:
         self._system_summary_model_turns = 0  # counts ONLY model-turns we summarized for
         self._auto_inject = auto_inject
         self._emotional_state = emotional_state
+        self._debt = debt
+        self._episode_store = episode_store
+        self._episode_top_k = episode_top_k
+        self._relationship = relationship
+        self._relationship_reflect_every_n = max(1, int(relationship_reflect_every_n_turns))
+        self._relationship_max_tokens = int(relationship_max_tokens)
+        self._relationship_max_entries = int(relationship_max_entries)
+        self._relationship_last_reflect_at = 0
         self._emotion_decay_rate = emotion_decay_rate
         self._confidence_decay_rate = confidence_decay_rate
         self._confidence_confirmation_threshold = confidence_confirmation_threshold
@@ -134,6 +152,14 @@ class MemoryEngine:
     @property
     def emotional_state(self) -> Optional[EmotionalStateLayer]:
         return self._emotional_state
+
+    @property
+    def debt(self) -> Optional[MemoryDebtLayer]:
+        return self._debt
+
+    @property
+    def relationship(self) -> Optional[RelationshipLayer]:
+        return self._relationship
 
     async def prepare(
         self,
@@ -162,23 +188,32 @@ class MemoryEngine:
             state = base_state
 
         chunks = await self._store.retrieve(user_input, top_k=self._top_k)
+        episode_chunks: list[EpisodeChunk] = []
+        if self._episode_store is not None:
+            try:
+                episode_chunks = await self._episode_store.retrieve(user_input, top_k=self._episode_top_k)
+            except Exception:
+                pass
         known_tags = self._router.known_tags
-        print(f"[memory] classifier check — use_classifier={self._use_classifier} known_tags={known_tags} model={self._classifier._model}")
         if self._use_classifier and known_tags:
-            print(f"[memory] calling classifier: model={self._classifier._model} input={user_input[:80]!r}")
             clf_result = await self._classifier.extract_tags(
                 user_input, chunks, known_tags,
                 tag_descriptions=self._router.tag_descriptions or None,
             )
-            print(f"[memory] classifier result — tags={clf_result.tags} raw={getattr(clf_result, 'raw_response', '')[:120]!r} error={clf_result.error!r}")
         else:
             from .classifier import ClassifierResult
             clf_result = ClassifierResult(model=self._classifier._model)
-            print(f"[memory] classifier skipped — tags=[]")
         tags = clf_result.tags
-        mutated, emotion_deltas = self._router.mutate(state, tags)
-        print(f"[memory] router result — applied_rules={getattr(mutated, '_applied_rules', [])} emotion_deltas={emotion_deltas}")
+        mutated, emotion_deltas, debt_effects = self._router.mutate(state, tags)
         applied: list[str] = getattr(mutated, "_applied_rules", [])
+
+        if self._debt is not None and debt_effects:
+            for effect in debt_effects:
+                if effect["type"] == "open":
+                    self._debt.open(effect["tag"], effect["label"], self.session_id, user_input)
+                elif effect["type"] == "close":
+                    self._debt.close(effect["tag"])
+            self._debt.save()
 
         if self._personality is not None:
             mutated = self._personality.merge_into_state(mutated)
@@ -197,12 +232,19 @@ class MemoryEngine:
         recent_limit = 2 if summary_text else self._history_window
         history = [] if skip_session_history else self._store.recent_turns(self.session_id, limit=recent_limit)
         notes_text = self._working_notes.text if self._working_notes is not None else ""
+        open_debts = self._debt.open_items() if self._debt is not None else []
+        relationship_context = (
+            self._relationship.profile.to_context(max_entries=self._relationship_max_entries)
+            if self._relationship is not None else ""
+        )
         recall_text = _format_recall(
             history,
             chunks,
             current_session_id=self.session_id,
             working_notes=notes_text,
             system_summary=summary_text,
+            open_debts=open_debts,
+            episode_chunks=episode_chunks,
         )
 
         # "What I think of the other speaker" — second retrieval keyed by the
@@ -244,12 +286,14 @@ class MemoryEngine:
                 sec_state.template_vars["emotional_state"] = emotion_text
             if "rule_ending" in all_vars:
                 sec_state.template_vars["rule_ending"] = getattr(mutated, "_rule_ending_text", "")
+            if "relationship_context" in all_vars:
+                sec_state.template_vars["relationship_context"] = relationship_context
 
         # When auto_inject is enabled and no section consumed memory_recall,
         # surface the recall text so callers can append it to the system prompt.
         auto_inject_recall = ""
         if self._auto_inject and not any_recall_declared:
-            parts = [p for p in [recall_text, emotion_text] if p]
+            parts = [p for p in [recall_text, emotion_text, relationship_context] if p]
             auto_inject_recall = "\n\n".join(parts)
 
         # Cache a "who you are" context using the SELECTED persona for this
@@ -320,6 +364,39 @@ class MemoryEngine:
                             pass
 
                     asyncio.create_task(_do_notes_update())
+
+        if (
+            self._relationship is not None
+            and self._notes_provider is not None
+            and self._notes_model
+        ):
+            count = len(self._session_turns)
+            if count - self._relationship_last_reflect_at >= self._relationship_reflect_every_n:
+                roles_present = {t.role for t in self._session_turns}
+                if "user" in roles_present and "assistant" in roles_present:
+                    self._relationship_last_reflect_at = count
+                    persona = self._build_persona_context()
+                    turns_snapshot = list(self._session_turns)
+
+                    async def _do_reflect(
+                        turns=turns_snapshot,
+                        persona=persona,
+                    ) -> None:
+                        try:
+                            await self._relationship.reflect(
+                                turns,
+                                self._notes_provider,
+                                self._notes_model,
+                                persona=persona,
+                                self_name=self._participant_name or "you",
+                                other_name=self._last_other_name or "the other person",
+                                max_tokens=self._relationship_max_tokens,
+                                max_entries=self._relationship_max_entries,
+                            )
+                        except Exception:
+                            pass
+
+                    asyncio.create_task(_do_reflect())
 
         return turn
 
@@ -415,16 +492,34 @@ class MemoryEngine:
         self,
         provider_model: Optional[str] = None,
     ) -> bool:
-        """Optionally amend the personality profile with session insights."""
-        if self._personality is None or not self._session_turns:
-            return False
-        model = provider_model or "llama3.2:1b"
-        return await self._personality.amend(
-            self._session_turns,
-            self._engine.provider,
-            model=model,
-            session_id=self.session_id,
-        )
+        """Optionally amend the personality profile and compress episode."""
+        result = False
+        if self._personality is not None and self._session_turns:
+            model = provider_model or "llama3.2:1b"
+            result = await self._personality.amend(
+                self._session_turns,
+                self._engine.provider,
+                model=model,
+                session_id=self.session_id,
+            )
+
+        if (
+            self._episode_store is not None
+            and self._session_turns
+            and self._notes_provider is not None
+            and self._notes_model
+        ):
+            try:
+                await self._episode_store.compress(
+                    self._session_turns,
+                    self._notes_provider,
+                    self._notes_model,
+                    session_id=self.session_id,
+                )
+            except Exception:
+                pass
+
+        return result
 
 
 def _strip_directive_sections(prompt: str, reg, skip_keys: list[str]) -> str:
@@ -505,12 +600,16 @@ def _format_recall(
     max_chunks: int = 3,
     working_notes: str = "",
     system_summary: str = "",
+    open_debts: Optional[list[Any]] = None,
+    episode_chunks: Optional[list[EpisodeChunk]] = None,
 ) -> str:
     """Render the participant's memory context block.
 
     Layout, in order:
+      Unresolved threads:   open debt entries (cross-session persistent).
       System summary:       compressed snapshot of earlier prompt context.
       Working notes:        running summary maintained periodically.
+      Past episodes:        compressed summaries of prior sessions.
       Recent conversation:  last N turns from THIS session, oldest-first.
       Relevant past notes:  retrieved chunks from OTHER sessions (dedup'd).
 
@@ -518,11 +617,19 @@ def _format_recall(
     """
     sections: list[str] = []
 
+    if open_debts:
+        lines = [f"- {e.label}" for e in open_debts]
+        sections.append("Unresolved threads:\n" + "\n".join(lines))
+
     if system_summary and system_summary.strip():
         sections.append(system_summary.strip())
 
     if working_notes and working_notes.strip():
         sections.append("Working notes (your running summary):\n" + working_notes.strip())
+
+    if episode_chunks:
+        lines = [f"- {_truncate(ec.episode.summary_text, 300)}" for ec in episode_chunks]
+        sections.append("Past episodes:\n" + "\n".join(lines))
 
     if history:
         lines = [_fmt_turn(t) for t in history]

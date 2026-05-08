@@ -243,6 +243,9 @@ async function loadSnapshot(side) {
   setCheck(`${side}-auto_inject`,             mc.auto_inject);
   // emotional_state defaults to true when not explicitly false
   setCheck(`${side}-emotional_state_enabled`, mc.emotional_state_enabled !== false);
+  setCheck(`${side}-debt_enabled`,            mc.debt_enabled);
+  setCheck(`${side}-episodic_enabled`,        mc.episodic_enabled);
+  setCheck(`${side}-relationship_enabled`,    mc.relationship_enabled);
   setNum(`${side}-history_window`,               mc.history_window);
   setNum(`${side}-top_k`,                        mc.top_k);
   setNum(`${side}-working_notes_every_n_turns`,  mc.working_notes_every_n_turns);
@@ -441,6 +444,15 @@ async function startEnsemble() {
     }
     if (document.getElementById(`${side}-emotional_state_enabled`)) {
       out.emotional_state_enabled = bool(`${side}-emotional_state_enabled`);
+    }
+    if (document.getElementById(`${side}-debt_enabled`)) {
+      out.debt_enabled = bool(`${side}-debt_enabled`);
+    }
+    if (document.getElementById(`${side}-episodic_enabled`)) {
+      out.episodic_enabled = bool(`${side}-episodic_enabled`);
+    }
+    if (document.getElementById(`${side}-relationship_enabled`)) {
+      out.relationship_enabled = bool(`${side}-relationship_enabled`);
     }
     const aboutMe = text(`${side}-notes_about_me_prompt`);
     const aboutOther = text(`${side}-notes_about_other_prompt`);
@@ -2302,7 +2314,7 @@ const PERSISTED_FIELDS = {
            "system_summary_every_n_turns", "system_summary_max_tokens",
            "gen-temperature", "gen-top_p", "gen-top_k", "gen-max_tokens", "gen-repeat_penalty", "gen-retries",
            "tts-speed"],
-  bool:   ["human", "memory", "working_notes_enabled", "system_summary_enabled", "tts"],
+  bool:   ["human", "memory", "working_notes_enabled", "system_summary_enabled", "debt_enabled", "episodic_enabled", "relationship_enabled", "tts"],
 };
 
 function saveParticipantSettings() {

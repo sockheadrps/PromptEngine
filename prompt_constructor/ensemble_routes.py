@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from .config import MULTI_TENANT, USER_ID_COOKIE
 
 from promptlibretto import Engine, OllamaProvider, Registry, RegistryState, load_registry
-from ensemble.engine import EnsembleEngine, Participant
+from .ensemble.engine import EnsembleEngine, Participant
 
 router = APIRouter(prefix="/api/ensemble")
 
@@ -67,10 +67,13 @@ async def _build_memory(
         from promptlibretto.memory import (
             Classifier,
             EmotionalStateLayer,
+            EpisodeStore,
+            MemoryDebtLayer,
             MemoryEngine,
             MemoryStore,
             OllamaEmbedder,
             PersonalityLayer,
+            RelationshipLayer,
             Router,
             SystemSummaryLayer,
             WorkingNotesLayer,
@@ -90,7 +93,10 @@ async def _build_memory(
     notes_on     = bool(cfg.get("working_notes_enabled"))
     sysum_on     = bool(cfg.get("system_summary_enabled"))
     auto_inject  = bool(cfg.get("auto_inject"))
-    emotion_on   = bool(cfg.get("emotional_state_enabled"))
+    emotion_on    = bool(cfg.get("emotional_state_enabled"))
+    debt_on       = bool(cfg.get("debt_enabled"))
+    episodic_on      = bool(cfg.get("episodic_enabled"))
+    relationship_on  = bool(cfg.get("relationship_enabled"))
     emotion_dims = list(cfg.get("emotion_dimensions") or ["warmth", "tension", "trust", "playfulness"])
     emotion_decay = float(cfg.get("emotion_decay_rate", 0.05))
 
@@ -117,6 +123,9 @@ async def _build_memory(
     conf_threshold = float(cfg.get("confidence_confirmation_threshold", 0.25))
     conf_boost     = float(cfg.get("confidence_boost_delta", 0.1))
     conf_floor     = float(cfg.get("confidence_floor", 0.1))
+    rel_every_n    = int(cfg.get("relationship_reflect_every_n_turns", 10))
+    rel_max_tokens = int(cfg.get("relationship_max_tokens", 150))
+    rel_max_entries= int(cfg.get("relationship_max_entries", 20))
 
     # Per-participant store path: <title>_<participant>.db so two
     # participants using the same registry still get separate stores.
@@ -199,9 +208,29 @@ async def _build_memory(
         emotional_state = EmotionalStateLayer(emotion_path, emotion_dims)
         emotional_state.load()
 
+    debt = None
+    if debt_on:
+        debt_path = str(sd / f"{participant}_debt.json")
+        debt = MemoryDebtLayer(debt_path)
+        debt.load()
+
+    episode_store = None
+    if episodic_on:
+        episode_store = EpisodeStore(
+            db_path=store_path,
+            embedder=embedder,
+            dimensions=int(cfg.get("embed_dimensions", 768)),
+        )
+
+    relationship = None
+    if relationship_on:
+        rel_path = str(sd / f"{participant}_relationship.json")
+        relationship = RelationshipLayer(rel_path, other_name="")
+        relationship.load()
+
     # When either side-call layer is on, MemoryEngine needs a notes_provider
     # + notes_model so it can run side-calls.
-    side_model = main_model if (notes_on or sysum_on) else None
+    side_model = main_model if (notes_on or sysum_on or relationship_on) else None
 
     mem_engine = MemoryEngine(
         engine=engine,
@@ -225,6 +254,12 @@ async def _build_memory(
         system_summary_skip_section_keys=sysum_skip_keys,
         auto_inject=auto_inject,
         emotional_state=emotional_state,
+        debt=debt,
+        episode_store=episode_store,
+        relationship=relationship,
+        relationship_reflect_every_n_turns=rel_every_n,
+        relationship_max_tokens=rel_max_tokens,
+        relationship_max_entries=rel_max_entries,
         emotion_decay_rate=emotion_decay,
         confidence_decay_rate=conf_decay,
         confidence_confirmation_threshold=conf_threshold,
@@ -234,6 +269,8 @@ async def _build_memory(
 
     async def cleanup() -> None:
         store.close()
+        if episode_store is not None:
+            episode_store.close()
         if ws_embedder is None:
             await embedder.aclose()
         if notes_provider is not None:

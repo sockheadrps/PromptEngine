@@ -5,9 +5,11 @@ import pytest
 from promptlibretto import (
     Engine,
     MockProvider,
+    OutputDirection,
     Registry,
     RegistryState,
     Route,
+    Scale,
     SectionState,
     export_json,
     hydrate,
@@ -42,6 +44,23 @@ def test_export_json_string(twitch_registry: Registry) -> None:
     text = export_json(eng)
     assert text.lstrip().startswith("{")
     assert "Twitch Chatter" in text
+
+
+def test_output_direction_omits_unset_scale() -> None:
+    assert OutputDirection(id="rules", text="Reply briefly.").to_dict() == {
+        "id": "rules",
+        "text": "Reply briefly.",
+    }
+
+
+def test_output_direction_exports_explicit_scale() -> None:
+    item = OutputDirection(
+        id="rules",
+        text="Reply briefly.",
+        scale=Scale(scale_descriptor="clinical"),
+    )
+
+    assert item.to_dict()["scale"]["scale_descriptor"] == "clinical"
 
 
 def test_hydrate_default_picks_first_items(twitch_registry: Registry) -> None:

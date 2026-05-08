@@ -1,12 +1,12 @@
-# Studio and Server
+# Prompt Constructor Server
 
-The studio is a browser toolset for schema v2 registries. It runs as a FastAPI server and exposes three tools — Studio, Builder, and Ensemble — plus memory and registry HTTP APIs.
+Prompt Constructor is a browser toolset for schema v2 registries. It runs as a FastAPI server and exposes Studio, Builder, Chat Builder, and Ensemble, plus memory and registry HTTP APIs.
 
 ## Run
 
 ```bash
-pip install "promptlibretto[studio,ollama]"
-promptlibretto-studio --port 8000
+pip install "promptlibretto[prompt-constructor,ollama]"
+prompt-constructor --port 8000
 ```
 
 Open <http://localhost:8000>.
@@ -17,11 +17,12 @@ Open <http://localhost:8000>.
 | --- | --- | --- |
 | `/` | Studio | Runtime tuning: load a registry, adjust state, preview prompt, generate. |
 | `/builder` | Builder | Visual authoring: build registry JSON from forms, then open it in Studio. |
+| `/chatbuilder` | Chat Builder | Conversation-driven authoring: describe what you want and an AI assistant builds the registry. |
 | `/ensemble` | Ensemble | Two-participant conversation: model-vs-model or model-vs-human. |
 
 ## Registry Format
 
-The studio loads and exports the same schema v2 registry shape that `Registry.from_dict()` accepts:
+Prompt Constructor loads and exports the same schema v2 registry shape that `Registry.from_dict()` accepts:
 
 ```json
 {
@@ -71,7 +72,7 @@ Builder supports:
 - Previewing generated registry JSON
 - Opening the result directly in Studio
 
-Bundled builder examples live in `studio/static/builder-examples/`.
+Bundled builder examples live in `prompt_constructor/static/builder-examples/`.
 
 The server endpoint `POST /api/registry/example/save` can save examples back to the allowed static examples directory.
 
@@ -85,12 +86,15 @@ Participants each get their own engine, state, provider, and optional memory pip
 
 Ensemble memory is isolated per participant. Each participant gets separate:
 
-- Vector store database
+- Vector store database (turns + episodic compression, when enabled)
 - Personality file
 - Working notes file
 - System summary file
+- Emotional state file (when enabled)
+- Memory debt file (when enabled)
+- Relationship arc file (when enabled)
 
-Resetting a participant wipes all of those artifacts. Personality, working notes, and system summary can preserve behavior even after the turn store is cleared.
+Resetting a participant wipes all of those artifacts. Side-call files (personality, notes, summary, relationship) can preserve behavior even after the turn store is cleared.
 
 ## Registry HTTP API
 
@@ -148,7 +152,7 @@ Ensemble routes live under `/api/ensemble`.
 | `POST /api/ensemble/step/{session_id}` | Advance one turn. |
 | `POST /api/ensemble/submit/{session_id}` | Submit human input for a human-driven participant. |
 | `POST /api/ensemble/reset_store` | Wipe all artifacts for a participant. |
-| `POST /api/ensemble/view_store` | Return recent turns, personality, working notes, and system summary. |
+| `POST /api/ensemble/view_store` | Return recent turns, personality, working notes, system summary, and emotional state. |
 | `WebSocket /api/ensemble/ws/{session_id}/embed` | Browser-delegated embedding for ensemble memory. |
 
 ## Browser-Delegated Inference
@@ -159,7 +163,7 @@ The server sends pending requests over the socket; the browser calls its local m
 
 ## Multi-Tenant Mode
 
-When multi-tenant mode is enabled, the server assigns each visitor a persistent anonymous user ID cookie. Studio requests also send an `X-Workspace` header, which is preferred when present. Memory files are partitioned under:
+When multi-tenant mode is enabled, the server assigns each visitor a persistent anonymous user ID cookie. Prompt Constructor requests also send an `X-Workspace` header, which is preferred when present. Memory files are partitioned under:
 
 ```
 ~/.promptlibretto/memory_stores/{workspace_or_user_id}/{registry_title}/
@@ -174,8 +178,8 @@ Single-user deployments use the same workspace-aware layout when requests includ
 | `PROMPT_ENGINE_MOCK` | `0` | Use `MockProvider` for server-side generation. |
 | `OLLAMA_URL` | `http://localhost:11434` | Base URL for server-side `OllamaProvider`. |
 | `OLLAMA_CHAT_PATH` | `/api/chat` | Chat endpoint path. `/v1/` paths use OpenAI-compatible payloads. |
-| `HOST` | `127.0.0.1` | Studio bind host. |
-| `PORT` | `8000` | Studio bind port. |
+| `HOST` | `127.0.0.1` | Prompt Constructor bind host. |
+| `PORT` | `8000` | Prompt Constructor bind port. |
 
 ## Docker
 
@@ -183,4 +187,4 @@ Single-user deployments use the same workspace-aware layout when requests includ
 docker compose up -d
 ```
 
-The container exposes the studio on port 8000. Browser state remains in the user's browser storage.
+The container exposes Prompt Constructor on port 8000. Browser state remains in the user's browser storage.

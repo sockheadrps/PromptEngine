@@ -48,6 +48,9 @@ class MemoryRule:
     actions: list[MemoryAction] = field(default_factory=list)
     description: str = ""
     ending_text: str = ""  # injected into prompt_endings as {rule_ending} when this rule fires
+    opens_debt: bool = False   # True → open a debt entry when this rule fires
+    debt_label: str = ""       # human-readable label for the opened debt
+    closes_debt: str = ""      # tag name of the debt to close when this rule fires
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "MemoryRule":
@@ -56,6 +59,9 @@ class MemoryRule:
             actions=[MemoryAction.from_dict(a) for a in (d.get("actions") or [])],
             description=str(d.get("description") or ""),
             ending_text=str(d.get("ending_text") or ""),
+            opens_debt=bool(d.get("opens_debt", False)),
+            debt_label=str(d.get("debt_label") or ""),
+            closes_debt=str(d.get("closes_debt") or ""),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,6 +70,12 @@ class MemoryRule:
             out["description"] = self.description
         if self.ending_text:
             out["ending_text"] = self.ending_text
+        if self.opens_debt:
+            out["opens_debt"] = True
+        if self.debt_label:
+            out["debt_label"] = self.debt_label
+        if self.closes_debt:
+            out["closes_debt"] = self.closes_debt
         return out
 
 
@@ -90,20 +102,21 @@ class Router:
         self,
         base_state: RegistryState,
         tags: list[str],
-    ) -> tuple[RegistryState, dict[str, float]]:
+    ) -> tuple[RegistryState, dict[str, float], list[dict]]:
         """Mutate registry state based on matched tags.
 
-        Returns (mutated_state, emotion_deltas). emotion_deltas is a dict of
-        {dimension: delta} aggregated across all fired rules — callers apply
-        these to EmotionalStateLayer after mutate() returns.
+        Returns (mutated_state, emotion_deltas, debt_effects).
+        - emotion_deltas: {dimension: delta} aggregated across all fired rules.
+        - debt_effects: list of {"type": "open"|"close", "tag": str, "label": str}
+          for MemoryDebtLayer to apply after mutate() returns.
         """
         if not tags:
-            return base_state, {}
+            return base_state, {}, []
 
         tag_set = set(tags)
         active_rules = [r for r in self._rules if r.tag in tag_set]
         if not active_rules:
-            return base_state, {}
+            return base_state, {}, []
 
         # Deep-copy all existing section states
         new_sections: dict[str, SectionState] = {
@@ -125,6 +138,7 @@ class Router:
 
         applied: list[str] = []
         emotion_deltas: dict[str, float] = {}
+        debt_effects: list[dict] = []
 
         for rule in active_rules:
             for action in rule.actions:
@@ -162,6 +176,18 @@ class Router:
                     delta_str = ", ".join(f"{k}{v:+.2f}" for k, v in action.deltas.items())
                     applied.append(f"{rule.tag} → emotion:{delta_str}")
 
+            if rule.opens_debt:
+                debt_effects.append({
+                    "type": "open",
+                    "tag": rule.tag,
+                    "label": rule.debt_label or rule.description or rule.tag,
+                })
+                applied.append(f"{rule.tag} → debt:open")
+
+            if rule.closes_debt:
+                debt_effects.append({"type": "close", "tag": rule.closes_debt})
+                applied.append(f"{rule.tag} → debt:close:{rule.closes_debt}")
+
         # Cap per-turn aggregate deltas so multiple rules firing simultaneously
         # can't slam a dimension to the ceiling in a single turn.
         _MAX = 0.12
@@ -172,7 +198,7 @@ class Router:
         new_state = RegistryState(sections=new_sections)
         new_state._applied_rules = applied  # type: ignore[attr-defined]
         new_state._rule_ending_text = "\n\n".join(ending_texts)  # type: ignore[attr-defined]
-        return new_state, emotion_deltas
+        return new_state, emotion_deltas, debt_effects
 
     @classmethod
     def from_registry_rules(cls, rules_raw: list[dict[str, Any]]) -> "Router":
