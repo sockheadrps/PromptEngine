@@ -1,16 +1,17 @@
-"""Registry model dataclasses — schema v22.
+"""Registry model dataclasses.
 
-JSON-safe, declarative. Maps 1:1 to the JSON the studio frontend
-imports/exports. No rendering logic here — see :mod:`hydrate`.
+JSON-safe and declarative. No rendering logic here; see :mod:`hydrate`.
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
-SCHEMA_VERSION = 22
+from .state import RegistryState
 
-# Section keys recognised by the engine (in canonical order).
+SCHEMA_VERSION = 2
+
 SECTION_KEYS: tuple[str, ...] = (
     "base_context",
     "personas",
@@ -18,103 +19,386 @@ SECTION_KEYS: tuple[str, ...] = (
     "static_injections",
     "runtime_injections",
     "output_prompt_directions",
-    "examples",
+    "groups",
     "prompt_endings",
 )
 
 
+# ── Display ───────────────────────────────────────────────────────────
+
+
+@dataclass
+class Display:
+    """Tool-facing presentation metadata. Never affects hydration."""
+
+    description: str = ""
+    icon: str = ""
+    color: str = ""
+    order: int = 0
+    hidden: bool = False
+
+
+def _display_dict(d: Display) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    if d.description:
+        out["description"] = d.description
+    if d.icon:
+        out["icon"] = d.icon
+    if d.color:
+        out["color"] = d.color
+    if d.order:
+        out["order"] = d.order
+    if d.hidden:
+        out["hidden"] = d.hidden
+    return out
+
+
+def _display_from_dict(data: dict[str, Any]) -> Display:
+    return Display(
+        description=str(data.get("description") or ""),
+        icon=str(data.get("icon") or ""),
+        color=str(data.get("color") or ""),
+        order=int(data.get("order") or 0),
+        hidden=bool(data.get("hidden", False)),
+    )
+
+
+# ── Scale ─────────────────────────────────────────────────────────────
+
+
+@dataclass
+class Scale:
+    """Reusable scale configuration for ScalableMixin items."""
+
+    label: str = "Scale"
+    scale_descriptor: str = ""
+    min_value: float = 1.0
+    max_value: float = 10.0
+    default_value: float = 5.0
+    randomize: bool = False
+    template: str = "{label}: {value}/{max_value} — {scale_descriptor}."
+
+
+# ── Fragment ──────────────────────────────────────────────────────────
+
+
+@dataclass
+class Fragment:
+    """Conditional text block. Renders when *condition* var is non-empty."""
+
+    id: str
+    text: str
+    condition: str = ""
+    label: str = ""
+    display: Display = field(default_factory=Display)
+
+    def to_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"id": self.id, "text": self.text}
+        if self.condition:
+            out["condition"] = self.condition
+        if self.label:
+            out["label"] = self.label
+        d = _display_dict(self.display)
+        if d:
+            out["display"] = d
+        return out
+
+
+# ── BaseItem ──────────────────────────────────────────────────────────
+
+
+@dataclass
+class BaseItem:
+    """Base for all typed item builders."""
+
+    id: str
+    label: str = ""
+    display: Display = field(default_factory=Display)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def _base_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"id": self.id}
+        if self.label:
+            out["label"] = self.label
+        d = _display_dict(self.display)
+        if d:
+            out["display"] = d
+        if self.metadata:
+            out["metadata"] = dict(self.metadata)
+        return out
+
+    def to_dict(self) -> dict[str, Any]:
+        return self._base_dict()
+
+
+# ── Mixins ────────────────────────────────────────────────────────────
+
+
+@dataclass(kw_only=True)
+class DynamicMixin:
+    """Adds template variable + fragment support. Requires Python 3.10+."""
+
+    template_vars: list[str] = field(default_factory=list)
+    template_defaults: dict[str, str] = field(default_factory=dict)
+    fragments: list[Fragment] = field(default_factory=list)
+
+    def _dynamic_dict(self) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        if self.template_vars:
+            out["template_vars"] = list(self.template_vars)
+        if self.template_defaults:
+            out["template_defaults"] = dict(self.template_defaults)
+        if self.fragments:
+            out["fragments"] = [
+                f.to_dict() if hasattr(f, "to_dict") else dict(f)
+                for f in self.fragments
+            ]
+        return out
+
+
+@dataclass(kw_only=True)
+class ScalableMixin:
+    """Adds a Scale to an item (e.g. Sentiment)."""
+
+    scale: Optional[Scale] = None
+
+    def _scale_dict(self) -> dict[str, Any]:
+        if self.scale is None:
+            return {}
+        if isinstance(self.scale, dict):
+            return {"scale": dict(self.scale)}
+        return {"scale": dataclasses.asdict(self.scale)}
+
+
+# ── Item types ────────────────────────────────────────────────────────
+
+
+@dataclass
+class Group(BaseItem):
+    """Reusable list of prompt snippets."""
+
+    pre_context: str = ""
+    items: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        if self.pre_context:
+            out["pre_context"] = self.pre_context
+        out["items"] = list(self.items)
+        return out
+
+
+@dataclass
+class ContextItem(BaseItem, DynamicMixin):
+    """Item for the ``base_context`` section."""
+
+    text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out.update(self._dynamic_dict())
+        if self.text:
+            out["text"] = self.text
+        return out
+
+
+@dataclass
+class Persona(BaseItem, DynamicMixin):
+    """Item for the ``personas`` section."""
+
+    context: str = ""
+    groups: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out.update(self._dynamic_dict())
+        if self.context:
+            out["context"] = self.context
+        if self.groups:
+            out["groups"] = list(self.groups)
+        return out
+
+
+@dataclass
+class Sentiment(BaseItem, DynamicMixin, ScalableMixin):
+    """Item for the ``sentiment`` section."""
+
+    context: str = ""
+    groups: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out.update(self._dynamic_dict())
+        out.update(self._scale_dict())
+        if self.context:
+            out["context"] = self.context
+        if self.groups:
+            out["groups"] = list(self.groups)
+        return out
+
+
+@dataclass
+class RuntimeInjection(BaseItem, DynamicMixin):
+    """Item for the ``runtime_injections`` section."""
+
+    text: str = ""
+    include_sections: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out.update(self._dynamic_dict())
+        if self.text:
+            out["text"] = self.text
+        if self.include_sections:
+            out["include_sections"] = list(self.include_sections)
+        return out
+
+
+@dataclass
+class StaticInjection(BaseItem):
+    """Item for the ``static_injections`` section."""
+
+    text: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        if self.text:
+            out["text"] = self.text
+        return out
+
+
+@dataclass
+class OutputDirection(BaseItem, DynamicMixin, ScalableMixin):
+    """Item for the ``output_prompt_directions`` section.
+
+    The optional scale injects a descriptive linguistic register into the prompt —
+    e.g. Scale(scale_descriptor="clinical and detached", template="Register: {value}/10 — {scale_descriptor}.")
+    The slider actuates the descriptor, shaping the model's voice, not a mechanical output parameter.
+    Use ``output_prompt_directions.scale`` in assembly_order to render it.
+    """
+
+    text: str = ""
+    groups: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out.update(self._dynamic_dict())
+        out.update(self._scale_dict())
+        if self.text:
+            out["text"] = self.text
+        if self.groups:
+            out["groups"] = list(self.groups)
+        return out
+
+
+@dataclass
+class PromptEnding(BaseItem):
+    """Item for the ``prompt_endings`` section."""
+
+    items: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        out = self._base_dict()
+        out["items"] = list(self.items)
+        return out
+
+
+# ── Normalize ─────────────────────────────────────────────────────────
+
+
+def _normalize_item(it: Any) -> dict[str, Any]:
+    """Coerce a typed item builder or plain dict to a plain dict."""
+    if hasattr(it, "to_dict") and callable(it.to_dict):
+        return dict(it.to_dict())
+    return dict(it)
+
+
+# ── Section ───────────────────────────────────────────────────────────
+
+
 @dataclass
 class Section:
-    """One section of the registry. Has items + optional tool-state extras."""
+    """One section of the registry — blueprint only, no runtime state."""
 
+    id: str
+    label: str = ""
+    display: Display = field(default_factory=Display)
+    items: list[dict[str, Any]] = field(default_factory=list)
     required: bool = True
     template_vars: list[str] = field(default_factory=list)
-    items: list[dict[str, Any]] = field(default_factory=list)
 
-    # Optional tool-state fields (emitted by the studio's Export Model JSON).
-    selected: Optional[Union[str, list[str]]] = None
-    section_random: Optional[bool] = None
-    array_modes: Optional[dict[str, str]] = None
-    slider: Optional[float] = None
-    slider_random: Optional[bool] = None
-    # Sentiment-only: format string for the `sentiment.scale` token.
-    # Placeholders: `{value}` (1-10), `{emotion}` (per-item scale_emotion).
-    scale_template: Optional[str] = None
-    # Default values for declared template_vars. Studio pre-fills the
-    # runtime-input rows from this on load so examples come ready to
-    # Pre-generate without the user typing in placeholders.
-    template_var_defaults: Optional[dict[str, str]] = None
+    def __post_init__(self) -> None:
+        self.items = [_normalize_item(it) for it in (self.items or [])]
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
             "required": self.required,
-            "template_vars": list(self.template_vars),
             "items": [dict(it) for it in self.items],
         }
-        if self.selected is not None:
-            out["selected"] = (
-                self.selected if isinstance(self.selected, str) else list(self.selected)
-            )
-        if self.section_random is not None:
-            out["section_random"] = self.section_random
-        if self.array_modes:
-            out["array_modes"] = dict(self.array_modes)
-        if self.slider is not None:
-            out["slider"] = self.slider
-        if self.slider_random is not None:
-            out["slider_random"] = self.slider_random
-        if self.scale_template:
-            out["scale_template"] = self.scale_template
-        if self.template_var_defaults:
-            out["template_var_defaults"] = dict(self.template_var_defaults)
+        if self.template_vars:
+            out["template_vars"] = list(self.template_vars)
+        if self.label:
+            out["label"] = self.label
+        d = _display_dict(self.display)
+        if d:
+            out["display"] = d
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Section":
-        defaults = data.get("template_var_defaults")
+    def from_dict(cls, data: dict[str, Any], section_id: str = "") -> "Section":
+        display_data = data.get("display")
         return cls(
-            required=bool(data.get("required", True)),
-            template_vars=list(data.get("template_vars") or []),
+            id=section_id or str(data.get("id") or ""),
+            label=str(data.get("label") or ""),
+            display=_display_from_dict(display_data) if display_data else Display(),
             items=[dict(it) for it in (data.get("items") or [])],
-            selected=data.get("selected"),
-            section_random=data.get("section_random"),
-            array_modes=dict(data["array_modes"]) if data.get("array_modes") else None,
-            slider=data.get("slider"),
-            slider_random=data.get("slider_random"),
-            scale_template=data.get("scale_template"),
-            template_var_defaults=dict(defaults) if defaults else None,
+            required=bool(data.get("required", True)),
+            template_vars=[str(v) for v in (data.get("template_vars") or [])],
         )
+
+
+# ── Route ─────────────────────────────────────────────────────────────
 
 
 @dataclass
 class Route:
-    """Optional route — overrides assembly_order / generation / output_policy
-    for a single ``Engine.run()`` call. If a registry has no routes, the
-    top-level fields are the only path."""
+    """Optional route — overrides assembly_order / generation / output_policy."""
 
+    id: str = ""
+    label: str = ""
     assembly_order: Optional[list[str]] = None
     generation: dict[str, Any] = field(default_factory=dict)
     output_policy: dict[str, Any] = field(default_factory=dict)
+    default_state: Optional[RegistryState] = None
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {}
+        if self.label:
+            out["label"] = self.label
         if self.assembly_order is not None:
             out["assembly_order"] = list(self.assembly_order)
         if self.generation:
             out["generation"] = dict(self.generation)
         if self.output_policy:
             out["output_policy"] = dict(self.output_policy)
+        if self.default_state:
+            out["default_state"] = self.default_state.to_dict()
         return out
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "Route":
+    def from_dict(cls, data: dict[str, Any], route_id: str = "") -> "Route":
+        ds_data = data.get("default_state")
         return cls(
-            assembly_order=list(data["assembly_order"])
-            if "assembly_order" in data
-            else None,
+            id=route_id or str(data.get("id") or ""),
+            label=str(data.get("label") or ""),
+            assembly_order=list(data["assembly_order"]) if "assembly_order" in data else None,
             generation=dict(data.get("generation") or {}),
             output_policy=dict(data.get("output_policy") or {}),
+            default_state=RegistryState.from_dict(ds_data) if ds_data else None,
         )
+
+
+# ── Registry ──────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -129,6 +413,7 @@ class Registry:
     routes: dict[str, Route] = field(default_factory=dict)
     generation: dict[str, Any] = field(default_factory=dict)
     output_policy: dict[str, Any] = field(default_factory=dict)
+    default_state: Optional[RegistryState] = None
 
     def to_dict(self, *, wrap: bool = True) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -149,32 +434,46 @@ class Registry:
             body["generation"] = dict(self.generation)
         if self.output_policy:
             body["output_policy"] = dict(self.output_policy)
+        if self.default_state:
+            body["default_state"] = self.default_state.to_dict()
         return {"registry": body} if wrap else body
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Registry":
         if "registry" in data and isinstance(data["registry"], dict):
             data = data["registry"]
+
+        version = int(data.get("version") or SCHEMA_VERSION)
+        if version != SCHEMA_VERSION:
+            raise ValueError(
+                f"unsupported registry schema version {version}; expected {SCHEMA_VERSION}"
+            )
+
+        RESERVED = {
+            "version", "title", "description", "assembly_order",
+            "routes", "generation", "output_policy", "default_state",
+        }
+
         sections: dict[str, Section] = {}
         for key, value in data.items():
-            if key in {
-                "version",
-                "title",
-                "description",
-                "assembly_order",
-                "routes",
-                "generation",
-                "output_policy",
-            }:
+            if key in RESERVED:
                 continue
             if isinstance(value, dict) and "items" in value:
-                sections[key] = Section.from_dict(value)
+                sections[key] = Section.from_dict(value, section_id=key)
+
         routes: dict[str, Route] = {}
         for k, v in (data.get("routes") or {}).items():
             if isinstance(v, dict):
-                routes[k] = Route.from_dict(v)
+                routes[k] = Route.from_dict(v, route_id=k)
+
+        ds_data = data.get("default_state")
+        if ds_data:
+            default_state: Optional[RegistryState] = RegistryState.from_dict(ds_data)
+        else:
+            default_state = None
+
         return cls(
-            version=int(data.get("version") or SCHEMA_VERSION),
+            version=version,
             title=str(data.get("title") or ""),
             description=str(data.get("description") or ""),
             assembly_order=[str(t) for t in (data.get("assembly_order") or [])],
@@ -182,4 +481,5 @@ class Registry:
             routes=routes,
             generation=dict(data.get("generation") or {}),
             output_policy=dict(data.get("output_policy") or {}),
+            default_state=default_state,
         )

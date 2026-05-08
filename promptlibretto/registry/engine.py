@@ -26,8 +26,10 @@ from ..providers.base import (
     supports_streaming,
 )
 from ..providers.mock import MockProvider
-from .hydrate import HydrateState, hydrate
+from .hydrate import hydrate
 from .model import Registry
+from .state import RegistryState
+
 
 
 # ── Result types ─────────────────────────────────────────────────
@@ -56,13 +58,13 @@ class GenerationChunk:
 
 
 def _coerce_state(
-    state: Union[HydrateState, Mapping[str, Any], None],
-) -> HydrateState:
+    state: Union[RegistryState, Mapping[str, Any], None],
+) -> RegistryState:
     if state is None:
-        return HydrateState()
-    if isinstance(state, HydrateState):
+        return RegistryState()
+    if isinstance(state, RegistryState):
         return state
-    return HydrateState.from_dict(dict(state))
+    return RegistryState.from_dict(dict(state))
 
 
 def _coerce_provider(provider: Any) -> ProviderAdapter:
@@ -128,7 +130,7 @@ class Engine:
 
     def hydrate(
         self,
-        state: Union[HydrateState, Mapping[str, Any], None] = None,
+        state: Union[RegistryState, Mapping[str, Any], None] = None,
         *,
         route: Optional[str] = None,
         seed: Optional[int] = None,
@@ -141,7 +143,7 @@ class Engine:
 
     async def run(
         self,
-        state: Union[HydrateState, Mapping[str, Any], None] = None,
+        state: Union[RegistryState, Mapping[str, Any], None] = None,
         *,
         route: Optional[str] = None,
         seed: Optional[int] = None,
@@ -196,7 +198,7 @@ class Engine:
 
     async def stream(
         self,
-        state: Union[HydrateState, Mapping[str, Any], None] = None,
+        state: Union[RegistryState, Mapping[str, Any], None] = None,
         *,
         route: Optional[str] = None,
         seed: Optional[int] = None,
