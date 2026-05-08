@@ -14,6 +14,16 @@ let activeEmbedWs = null;
 const participantState = { a: null, b: null };
 let hasRun = false;
 
+// Collected per-run for post-run analytics.
+let _runTraceLog = [];
+let _runNames = { a: "A", b: "B" };
+
+// Live per-side stats accumulated during a run.
+const _sideStats = {
+  a: { tags: {}, confValues: [], turnCount: 0, emotion: null },
+  b: { tags: {}, confValues: [], turnCount: 0, emotion: null },
+};
+
 // Examples loaded dynamically from builder-examples/index.json.
 let _exampleIndex = null;
 async function getExampleIndex() {
@@ -64,6 +74,7 @@ async function loadSnapshots() {
 
   for (const side of ["a", "b"]) {
     const sel = document.getElementById(`${side}-snapshot`);
+    const prevVal = sel.value;
     sel.innerHTML = '<option value="">Load Snapshot or Example…</option>';
 
     // Builder examples — loaded from index.json.
@@ -102,6 +113,11 @@ async function loadSnapshots() {
         og.appendChild(opt);
       }
       sel.appendChild(og);
+    }
+
+    // Restore selection if the option still exists after the rebuild.
+    if (prevVal && sel.querySelector(`option[value="${CSS.escape(prevVal)}"]`)) {
+      sel.value = prevVal;
     }
   }
 
@@ -213,11 +229,44 @@ async function loadSnapshot(side) {
   const model = reg?.generation?.model || getStudioConnection()?.model;
   if (model) document.getElementById(`${side}-model`).value = model;
 
+  // Sync BEHAVIORAL memory config from registry — feature flags and tuning
+  // parameters only. Connection details (URLs, model names, paths) come from
+  // the workspace's saved participant settings, not the registry file.
+  const mc = reg?.memory_config || {};
+  const hasMem = !!(reg?.memory_rules?.length || Object.keys(mc).length);
+  const setCheck = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
+  const setNum   = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  // Auto-enable the memory pipeline toggle when the registry has memory configured.
+  if (hasMem) setCheck(`${side}-memory`, true);
+  setCheck(`${side}-working_notes_enabled`,   mc.working_notes_enabled);
+  setCheck(`${side}-system_summary_enabled`,  mc.system_summary_enabled);
+  setCheck(`${side}-auto_inject`,             mc.auto_inject);
+  // emotional_state defaults to true when not explicitly false
+  setCheck(`${side}-emotional_state_enabled`, mc.emotional_state_enabled !== false);
+  setNum(`${side}-history_window`,               mc.history_window);
+  setNum(`${side}-top_k`,                        mc.top_k);
+  setNum(`${side}-working_notes_every_n_turns`,  mc.working_notes_every_n_turns);
+  setNum(`${side}-working_notes_max_tokens`,     mc.working_notes_max_tokens);
+  setNum(`${side}-system_summary_every_n_turns`, mc.system_summary_every_n_turns);
+  setNum(`${side}-system_summary_max_tokens`,    mc.system_summary_max_tokens);
+  // Notes prompts are registry-specific content, not connection details — sync them.
+  if (mc.notes_about_me_prompt)    { const el = document.getElementById(`${side}-notes_about_me_prompt`);    if (el) el.value = mc.notes_about_me_prompt; }
+  if (mc.notes_about_other_prompt) { const el = document.getElementById(`${side}-notes_about_other_prompt`); if (el) el.value = mc.notes_about_other_prompt; }
+  // Connection fields (embed_url, embed_path, classifier_chat_path, model names)
+  // are intentionally NOT synced from the registry — they live in workspace settings.
+
+  // user_message is runtime-only — strip it from participant state so it is
+  // never pre-populated into the assembled prompt.
+  if (participantState[side]) delete participantState[side].user_message;
+
   renderTvarInputs(side, reg);
   refreshSummary(side);
+  // Persist the registry-synced state so page reloads don't revert
+  // checkboxes to stale saved values.
+  saveParticipantSettings();
 }
 
-const ENSEMBLE_RUNTIME_VARS = new Set(["memory_recall", "other_name", "thoughts_about_other", "working_notes", "system_summary", "rule_ending"]);
+const ENSEMBLE_RUNTIME_VARS = new Set(["memory_recall", "other_name", "thoughts_about_other", "working_notes", "system_summary", "rule_ending", "emotional_state"]);
 
 function rerenderTvars(side) {
   const raw = document.getElementById(`${side}-registry`)?.value?.trim();
@@ -387,12 +436,20 @@ async function startEnsemble() {
     if (document.getElementById(`${side}-system_summary_enabled`)) {
       out.system_summary_enabled = bool(`${side}-system_summary_enabled`);
     }
+    if (document.getElementById(`${side}-auto_inject`)) {
+      out.auto_inject = bool(`${side}-auto_inject`);
+    }
+    if (document.getElementById(`${side}-emotional_state_enabled`)) {
+      out.emotional_state_enabled = bool(`${side}-emotional_state_enabled`);
+    }
     const aboutMe = text(`${side}-notes_about_me_prompt`);
     const aboutOther = text(`${side}-notes_about_other_prompt`);
     if (aboutMe)    out.notes_about_me_prompt    = aboutMe;
     if (aboutOther) out.notes_about_other_prompt = aboutOther;
+    const clfPath   = text(`${side}-classifier_chat_path`);
     const embedUrl  = text(`${side}-embed_url`);
     const embedPath = text(`${side}-embed_path`);
+    if (clfPath)   out.classifier_chat_path = clfPath;
     if (embedUrl)  out.embed_url  = embedUrl;
     if (embedPath) out.embed_path = embedPath;
     return out;
@@ -468,6 +525,8 @@ async function startEnsemble() {
   const modelA = document.getElementById("a-model").value.trim() || conn.model || "llama3";
   const modelB = document.getElementById("b-model").value.trim() || conn.model || "llama3";
 
+  _runTraceLog = [];
+  _runNames = { a: nameA, b: nameB };
   clearConversation();
   if (seed) showSeed(seed);
   setRunning(true);
@@ -666,6 +725,7 @@ let _voicesCache = [];
 // Each item: { utterance, side, bubbleEl }
 const _ttsQueue = [];
 let _ttsActive = null;     // currently playing { utterance, side, bubbleEl }
+let _ttsWatchdog = null;   // interval that rescues stalled queue when Chrome drops utterance.onend
 let _stepPending = false;  // backend is awaiting our /step request (manual step mode only)
 const _turnGates = new Map();
 
@@ -745,6 +805,26 @@ function ttsIsBusy() {
   return !!_ttsActive || _ttsQueue.length > 0;
 }
 
+// Chrome frequently drops utterance.onend, leaving _ttsActive set while
+// speechSynthesis.speaking has already gone false. The watchdog detects
+// this and manually advances the queue so playback doesn't stall.
+function _startTtsWatchdog() {
+  if (_ttsWatchdog) return;
+  _ttsWatchdog = setInterval(() => {
+    if (!_ttsActive) {
+      if (_ttsQueue.length === 0) { clearInterval(_ttsWatchdog); _ttsWatchdog = null; }
+      return;
+    }
+    if (typeof speechSynthesis !== "undefined" && !speechSynthesis.speaking && !speechSynthesis.pending) {
+      const item = _ttsActive;
+      _ttsActive = null;
+      if (typeof item.onReveal === "function") item.onReveal();
+      refreshStepButton();
+      pumpTtsQueue();
+    }
+  }, 500);
+}
+
 function pumpTtsQueue() {
   if (_ttsActive || _ttsQueue.length === 0) return;
   const item = _ttsQueue.shift();
@@ -771,6 +851,7 @@ function pumpTtsQueue() {
   };
   try {
     speechSynthesis.speak(item.utterance);
+    _startTtsWatchdog();
   } catch (_) {
     finish();
   }
@@ -788,6 +869,7 @@ function flushTtsQueue() {
   }
   _ttsQueue.length = 0;
   _ttsActive = null;
+  if (_ttsWatchdog) { clearInterval(_ttsWatchdog); _ttsWatchdog = null; }
   if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
   revealAllHeldTurns();
 }
@@ -1188,6 +1270,13 @@ function handleEvent(event, nameA, nameB) {
     gate.traceEvent = { ...event, side };
     if (ttsIsBusy()) gate.hold = true;
     if (!gate.hold || gate.released) renderHeldTraceIfReady(gate);
+    _runTraceLog.push({ turn: event.turn, side, trace: event.trace });
+    const ss = _sideStats[side];
+    ss.turnCount++;
+    for (const tag of (event.trace.tags || [])) ss.tags[tag] = (ss.tags[tag] || 0) + 1;
+    for (const c of (event.trace.chunks || [])) { if (c.confidence != null) ss.confValues.push(c.confidence); }
+    if (event.trace.emotional_state) ss.emotion = event.trace.emotional_state;
+    renderSideStats(side);
     return;
   }
   if (event.type === "turn_start") {
@@ -1342,17 +1431,25 @@ function showHumanPrompt(side, name, num, _lastInput, sessionId) {
 function clearConversation() {
   const el = document.getElementById("conversation");
   el.innerHTML = "";
+  const analyticsArea = document.getElementById("analytics-area");
+  if (analyticsArea) { analyticsArea.innerHTML = ""; analyticsArea.hidden = true; }
+  const btnA = document.getElementById("btn-analytics");
+  if (btnA) { btnA.hidden = true; btnA.textContent = "Analytics ↑"; }
   currentBubble = null;
   turnCount = 0;
   _turnGates.clear();
   _sidesSpoken.clear();
+  _runTraceLog = [];
   for (const side of ["a", "b"]) {
+    _sideStats[side] = { tags: {}, confValues: [], turnCount: 0, emotion: null };
     const meBody = document.querySelector(`#side-${side}-self .thoughts-pane-body`);
     const otBody = document.querySelector(`#side-${side}-other .thoughts-pane-body`);
     const trace = document.getElementById(`side-${side}-trace`);
+    const stats = document.getElementById(`side-${side}-stats`);
     if (meBody) meBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
     if (otBody) otBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
     if (trace) trace.innerHTML = `<div class="side-panel-empty">no turns yet</div>`;
+    if (stats) stats.innerHTML = `<div class="side-panel-empty">no data yet</div>`;
   }
 }
 
@@ -1530,11 +1627,20 @@ function renderSidePanel(side, speakerName, trace, postGen = null) {
       sec.innerHTML = `
         <summary>Retrieved chunks <span class="side-section-meta">${trace.chunks.length}</span></summary>
         <div class="side-section-body">
-          ${trace.chunks.map((c) => `
+          ${trace.chunks.map((c) => {
+            const confPct = c.confidence != null ? Math.round(c.confidence * 100) : null;
+            const confLabel = confPct != null
+              ? (confPct >= 75 ? "certain" : confPct >= 45 ? "possible" : "uncertain")
+              : "";
+            const confColor = confPct != null
+              ? (confPct >= 75 ? "var(--accent)" : confPct >= 45 ? "#c8a84b" : "#888")
+              : "";
+            return `
             <div class="side-chunk">
-              <div class="side-chunk-meta">[${escHtml(c.role)}] score ${c.score}</div>
+              <div class="side-chunk-meta">[${escHtml(c.role)}] score ${c.score}${confPct != null ? ` &nbsp;·&nbsp; <span style="color:${confColor}">${confLabel} (${confPct}%)</span>` : ""}</div>
               <div>${escHtml(c.text)}</div>
-            </div>`).join("")}
+            </div>`;
+          }).join("")}
         </div>`;
       traceEl.appendChild(sec);
     }
@@ -1557,6 +1663,40 @@ function renderSidePanel(side, speakerName, trace, postGen = null) {
       sec.innerHTML = `
         <summary>System prompt summary <span class="side-section-meta">empty</span></summary>
         <div class="side-section-body muted">No summary yet — appears after the first compression cycle.</div>`;
+      traceEl.appendChild(sec);
+    }
+
+    // Emotional state
+    if (trace.emotional_state) {
+      const es = trace.emotional_state;
+      const dims = es.dimensions || {};
+      const dimRows = Object.entries(dims).map(([k, v]) => {
+        const pct = Math.round(v * 100);
+        const bar = `<div style="display:inline-block;width:${pct}px;max-width:100px;height:6px;background:var(--accent);border-radius:3px;vertical-align:middle"></div>`;
+        return `<div class="trace-line"><span class="muted">${escHtml(k)}</span> ${bar} <strong>${pct}%</strong></div>`;
+      }).join("");
+      const sec = document.createElement("details");
+      sec.className = "side-section";
+      sec.open = true;
+      sec.innerHTML = `
+        <summary>Emotional state <span class="side-section-meta">turn ${es.turn_count || 0}</span></summary>
+        <div class="side-section-body">
+          ${es.text ? `<div class="muted" style="margin-bottom:6px">${escHtml(es.text)}</div>` : ""}
+          ${dimRows}
+        </div>`;
+      traceEl.appendChild(sec);
+    }
+
+    // Style blend
+    if (trace.style_blend?.length) {
+      const sec = document.createElement("details");
+      sec.className = "side-section";
+      sec.open = true;
+      sec.innerHTML = `
+        <summary>Style blend <span class="side-section-meta">${trace.style_blend.length} active</span></summary>
+        <div class="side-section-body">
+          ${trace.style_blend.map((l) => `<div class="trace-line muted">${escHtml(l)}</div>`).join("")}
+        </div>`;
       traceEl.appendChild(sec);
     }
 
@@ -1613,6 +1753,277 @@ function showDone() {
   div.textContent = "— conversation complete —";
   conv.appendChild(div);
   scrollToBottom();
+  if (_runTraceLog.length) {
+    renderRunAnalytics(_runTraceLog, _runNames);
+    const btn = document.getElementById("btn-analytics");
+    if (btn) btn.hidden = false;
+  }
+}
+
+function toggleAnalytics() {
+  const area = document.getElementById("analytics-area");
+  const btn = document.getElementById("btn-analytics");
+  if (!area) return;
+  area.hidden = !area.hidden;
+  if (btn) btn.textContent = area.hidden ? "Analytics ↑" : "Analytics ↓";
+}
+
+// ── live per-side stats ───────────────────────────────────────────
+
+function renderSideStats(side) {
+  const el = document.getElementById(`side-${side}-stats`);
+  if (!el) return;
+  const ss = _sideStats[side];
+  const DIM_COLORS = { warmth: "#c98b40", tension: "#c06060", trust: "#8db0cc", playfulness: "#7ab87a" };
+  let html = "";
+
+  // Emotional state
+  if (ss.emotion) {
+    const dims = Object.entries(ss.emotion.dimensions || {});
+    const turnN = ss.emotion.turn_count ?? "—";
+    html += `<div class="ss-section">
+      <div class="ss-label">Emotional state <span class="ss-meta">turn ${turnN}</span></div>`;
+    for (const [dim, val] of dims) {
+      const pct = Math.round(val * 100);
+      const color = DIM_COLORS[dim] || "var(--accent)";
+      const devPct = Math.round(Math.abs(val - 0.5) * 200); // 0–100, how far from neutral
+      html += `<div class="ss-dim-row">
+        <span class="ss-dim-name">${escHtml(dim)}</span>
+        <div class="ss-dim-track">
+          <div class="ss-dim-fill" style="width:${pct}%;background:${color}"></div>
+          <div class="ss-dim-neutral"></div>
+        </div>
+        <span class="ss-dim-val" style="color:${devPct > 10 ? color : "var(--muted)"}">${pct}%</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // Confidence
+  if (ss.confValues.length) {
+    const mean = ss.confValues.reduce((s, v) => s + v, 0) / ss.confValues.length;
+    const certain   = ss.confValues.filter(v => v >= 0.75).length;
+    const possible  = ss.confValues.filter(v => v >= 0.45 && v < 0.75).length;
+    const uncertain = ss.confValues.filter(v => v < 0.45).length;
+    const total = ss.confValues.length;
+    const pct = (n) => Math.round((n / total) * 100);
+    html += `<div class="ss-section">
+      <div class="ss-label">Confidence <span class="ss-meta">${total} chunks · mean ${Math.round(mean * 100)}%</span></div>
+      <div class="an-conf-bar" style="height:8px;border-radius:4px">
+        <div class="an-conf-seg an-conf-certain"  style="width:${pct(certain)}%"></div>
+        <div class="an-conf-seg an-conf-possible" style="width:${pct(possible)}%"></div>
+        <div class="an-conf-seg an-conf-uncertain"style="width:${pct(uncertain)}%"></div>
+      </div>
+      <div class="ss-conf-legend">
+        <span><span class="an-conf-dot certain"></span>${pct(certain)}% certain</span>
+        <span><span class="an-conf-dot possible"></span>${pct(possible)}% possible</span>
+        <span><span class="an-conf-dot uncertain"></span>${pct(uncertain)}% uncertain</span>
+      </div>
+    </div>`;
+  }
+
+  // Tags
+  const tagEntries = Object.entries(ss.tags).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  if (tagEntries.length) {
+    const maxN = tagEntries[0][1];
+    html += `<div class="ss-section">
+      <div class="ss-label">Tags <span class="ss-meta">${ss.turnCount} turns</span></div>
+      <div class="ss-tag-list">
+        ${tagEntries.map(([tag, n]) => `
+          <div class="ss-tag-row">
+            <span class="ss-tag-name">${escHtml(tag)}</span>
+            <div class="ss-tag-track"><div class="ss-tag-fill" style="width:${Math.round((n/maxN)*100)}%"></div></div>
+            <span class="ss-tag-count">${n}</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = html || `<div class="side-panel-empty">no memory data</div>`;
+}
+
+// ── post-run analytics ────────────────────────────────────────────
+
+function renderRunAnalytics(traces, names) {
+  if (!traces.length) return;
+  const analyticsArea = document.getElementById("analytics-area");
+  if (!analyticsArea) return;
+  analyticsArea.innerHTML = "";
+
+  // ── 1. Collect data ──
+  const tagCounts = {};
+  const ruleCounts = {};
+  const confValues = [];
+  const emotionByTurn = { a: [], b: [] };
+  const scoresByTurn = { a: [], b: [] };
+
+  for (const { turn, side, trace } of traces) {
+    for (const tag of (trace.tags || [])) {
+      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+    }
+    for (const rule of (trace.applied_rules || [])) {
+      ruleCounts[rule] = (ruleCounts[rule] || 0) + 1;
+    }
+    for (const c of (trace.chunks || [])) {
+      if (c.confidence != null) confValues.push(c.confidence);
+      if (c.score != null) scoresByTurn[side].push({ turn, score: c.score });
+    }
+    if (trace.emotional_state?.dimensions) {
+      emotionByTurn[side].push({ turn, dims: trace.emotional_state.dimensions });
+    }
+  }
+
+  // ── 2. Build panel ──
+  const panel = document.createElement("details");
+  panel.className = "analytics-panel";
+  panel.open = true;
+
+  const totalTurns = traces.length;
+  const sections = [];
+
+  // Tag frequency
+  const tagEntries = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]);
+  if (tagEntries.length) {
+    const maxCount = tagEntries[0][1];
+    sections.push(`
+      <div class="an-section">
+        <div class="an-section-title">Tag frequency <span class="an-meta">${totalTurns} turns</span></div>
+        <div class="an-bars">
+          ${tagEntries.map(([tag, n]) => `
+            <div class="an-bar-row">
+              <span class="an-bar-label">${escHtml(tag)}</span>
+              <div class="an-bar-track"><div class="an-bar-fill" style="width:${Math.round((n/maxCount)*100)}%"></div></div>
+              <span class="an-bar-count">${n}</span>
+            </div>`).join("")}
+        </div>
+      </div>`);
+  }
+
+  // Applied rules frequency (collapsed)
+  const ruleEntries = Object.entries(ruleCounts).sort((a, b) => b[1] - a[1]);
+  if (ruleEntries.length) {
+    const maxR = ruleEntries[0][1];
+    sections.push(`
+      <div class="an-section">
+        <details>
+          <summary class="an-section-title">Applied rules <span class="an-meta">${ruleEntries.length} distinct</span></summary>
+          <div class="an-bars" style="margin-top:8px">
+            ${ruleEntries.map(([rule, n]) => `
+              <div class="an-bar-row">
+                <span class="an-bar-label an-bar-label-sm">${escHtml(rule)}</span>
+                <div class="an-bar-track"><div class="an-bar-fill an-bar-fill-b" style="width:${Math.round((n/maxR)*100)}%"></div></div>
+                <span class="an-bar-count">${n}</span>
+              </div>`).join("")}
+          </div>
+        </details>
+      </div>`);
+  }
+
+  // Confidence stats
+  if (confValues.length) {
+    const mean = confValues.reduce((s, v) => s + v, 0) / confValues.length;
+    const certain  = confValues.filter(v => v >= 0.75).length;
+    const possible = confValues.filter(v => v >= 0.45 && v < 0.75).length;
+    const uncertain = confValues.filter(v => v < 0.45).length;
+    const total = confValues.length;
+    const pct = (n) => Math.round((n / total) * 100);
+    sections.push(`
+      <div class="an-section">
+        <div class="an-section-title">Memory confidence <span class="an-meta">${total} chunks retrieved</span></div>
+        <div class="an-conf-row">
+          <div class="an-conf-bar">
+            <div class="an-conf-seg an-conf-certain"  style="width:${pct(certain)}%"  title="certain ${certain}"></div>
+            <div class="an-conf-seg an-conf-possible" style="width:${pct(possible)}%" title="possible ${possible}"></div>
+            <div class="an-conf-seg an-conf-uncertain"style="width:${pct(uncertain)}%"title="uncertain ${uncertain}"></div>
+          </div>
+          <span class="an-meta">mean ${Math.round(mean*100)}%</span>
+        </div>
+        <div class="an-conf-legend">
+          <span class="an-conf-dot certain"></span>certain ${pct(certain)}%
+          <span class="an-conf-dot possible"></span>possible ${pct(possible)}%
+          <span class="an-conf-dot uncertain"></span>uncertain ${pct(uncertain)}%
+        </div>
+      </div>`);
+  }
+
+  // Emotion trajectories
+  for (const side of ["a", "b"]) {
+    const pts = emotionByTurn[side];
+    if (!pts.length) continue;
+    const name = names[side];
+    const dims = Object.keys(pts[0].dims);
+    const DIM_COLORS = {
+      warmth: "#c98b40", tension: "#c06060", trust: "#8db0cc", playfulness: "#7ab87a",
+    };
+
+    // Detect if all values are stuck at neutral (no emotion rules fired).
+    const allNeutral = dims.every(dim =>
+      pts.every(p => Math.abs((p.dims[dim] ?? 0.5) - 0.5) < 0.001)
+    );
+
+    if (allNeutral) {
+      sections.push(`
+        <div class="an-section">
+          <div class="an-section-title">Emotional state — ${escHtml(name)} <span class="an-meta">neutral throughout</span></div>
+          <div class="an-em-neutral-hint">All dimensions held at 50% — no <code>emotion</code> action type rules fired. Add rules with <code>"type": "emotion"</code> actions in the Template Builder to drive emotional drift.</div>
+        </div>`);
+      continue;
+    }
+
+    const W = 320, H = 72, PAD = { l: 6, r: 6, t: 8, b: 16 };
+    const innerW = W - PAD.l - PAD.r;
+    const innerH = H - PAD.t - PAD.b;
+    const turns = pts.map(p => p.turn);
+    const minT = Math.min(...turns), maxT = Math.max(...turns);
+    const xOf = (t) => PAD.l + (maxT > minT ? ((t - minT) / (maxT - minT)) * innerW : innerW / 2);
+    const yOf = (v) => PAD.t + innerH - v * innerH;
+
+    const lines = dims.map((dim) => {
+      const color = DIM_COLORS[dim] || "#888";
+      const d = pts.map((p, i) => {
+        const x = xOf(p.turn);
+        const y = yOf(p.dims[dim] ?? 0.5);
+        return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      return `<path d="${d}" stroke="${color}" stroke-width="1.5" fill="none" opacity="0.85" />`;
+    }).join("");
+
+    const dots = dims.map((dim) => {
+      const color = DIM_COLORS[dim] || "#888";
+      return pts.map((p) => {
+        const x = xOf(p.turn);
+        const y = yOf(p.dims[dim] ?? 0.5);
+        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.5" fill="${color}" opacity="0.7" />`;
+      }).join("");
+    }).join("");
+
+    // Neutral guideline at 0.5
+    const midY = yOf(0.5).toFixed(1);
+    const legend = dims.map((dim) => {
+      const color = DIM_COLORS[dim] || "#888";
+      const lastVal = pts[pts.length - 1].dims[dim] ?? 0.5;
+      return `<span class="an-em-leg-item"><svg width="12" height="4"><line x1="0" y1="2" x2="12" y2="2" stroke="${color}" stroke-width="1.5"/></svg> ${escHtml(dim)} <strong>${Math.round(lastVal*100)}%</strong></span>`;
+    }).join("");
+
+    sections.push(`
+      <div class="an-section">
+        <div class="an-section-title">Emotional state — ${escHtml(name)} <span class="an-meta">${pts.length} samples</span></div>
+        <svg class="an-em-chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+          <line x1="${PAD.l}" y1="${midY}" x2="${W - PAD.r}" y2="${midY}" stroke="#2d2820" stroke-width="1" stroke-dasharray="4,3"/>
+          ${lines}${dots}
+          <text x="${PAD.l}" y="${H - 2}" font-size="9" fill="#524a3c">turn ${minT+1}</text>
+          <text x="${W - PAD.r}" y="${H - 2}" font-size="9" fill="#524a3c" text-anchor="end">turn ${maxT+1}</text>
+        </svg>
+        <div class="an-em-legend">${legend}</div>
+      </div>`);
+  }
+
+  if (!sections.length) return;
+
+  panel.innerHTML = `
+    <summary class="analytics-summary">Run analytics</summary>
+    <div class="analytics-body">${sections.join("")}</div>`;
+  analyticsArea.appendChild(panel);
 }
 
 function showError(msg) {

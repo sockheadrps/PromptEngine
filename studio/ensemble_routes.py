@@ -66,6 +66,7 @@ async def _build_memory(
     try:
         from promptlibretto.memory import (
             Classifier,
+            EmotionalStateLayer,
             MemoryEngine,
             MemoryStore,
             OllamaEmbedder,
@@ -84,10 +85,14 @@ async def _build_memory(
             if v is not None and v != "":
                 cfg[k] = v
 
-    has_rules  = bool(reg.memory_rules)
-    pf_setting = cfg.get("personality_file") or ""
-    notes_on   = bool(cfg.get("working_notes_enabled"))
-    sysum_on   = bool(cfg.get("system_summary_enabled"))
+    has_rules    = bool(reg.memory_rules)
+    pf_setting   = cfg.get("personality_file") or ""
+    notes_on     = bool(cfg.get("working_notes_enabled"))
+    sysum_on     = bool(cfg.get("system_summary_enabled"))
+    auto_inject  = bool(cfg.get("auto_inject"))
+    emotion_on   = bool(cfg.get("emotional_state_enabled"))
+    emotion_dims = list(cfg.get("emotion_dimensions") or ["warmth", "tension", "trust", "playfulness"])
+    emotion_decay = float(cfg.get("emotion_decay_rate", 0.05))
 
     classifier_url   = cfg.get("classifier_url")  or base_url
     embed_url        = cfg.get("embed_url")       or classifier_url
@@ -108,6 +113,10 @@ async def _build_memory(
         "sentiment",
         "static_injections",
     ])
+    conf_decay     = float(cfg.get("confidence_decay_rate", 0.02))
+    conf_threshold = float(cfg.get("confidence_confirmation_threshold", 0.25))
+    conf_boost     = float(cfg.get("confidence_boost_delta", 0.1))
+    conf_floor     = float(cfg.get("confidence_floor", 0.1))
 
     # Per-participant store path: <title>_<participant>.db so two
     # participants using the same registry still get separate stores.
@@ -145,7 +154,14 @@ async def _build_memory(
             embed_path=cfg.get("embed_path") or "/api/embed",
             payload_shape=cfg.get("embed_payload_shape") or "auto",
         )
-    store    = MemoryStore(db_path=store_path, embedder=embedder)
+    store    = MemoryStore(
+        db_path=store_path,
+        embedder=embedder,
+        confidence_decay_rate=conf_decay,
+        confidence_confirmation_threshold=conf_threshold,
+        confidence_boost_delta=conf_boost,
+        confidence_floor=conf_floor,
+    )
     clf_provider = ws_provider if ws_provider is not None else OllamaProvider(
         base_url=classifier_url,
         chat_path=cfg.get("classifier_chat_path") or "/api/chat",
@@ -177,6 +193,12 @@ async def _build_memory(
         system_summary = SystemSummaryLayer(sysum_path)
         system_summary.load()
 
+    emotional_state = None
+    if emotion_on:
+        emotion_path = str(sd / f"{participant}_emotion.json")
+        emotional_state = EmotionalStateLayer(emotion_path, emotion_dims)
+        emotional_state.load()
+
     # When either side-call layer is on, MemoryEngine needs a notes_provider
     # + notes_model so it can run side-calls.
     side_model = main_model if (notes_on or sysum_on) else None
@@ -201,6 +223,13 @@ async def _build_memory(
         system_summary_every_n_turns=sysum_every_n,
         system_summary_max_tokens=sysum_max_tokens,
         system_summary_skip_section_keys=sysum_skip_keys,
+        auto_inject=auto_inject,
+        emotional_state=emotional_state,
+        emotion_decay_rate=emotion_decay,
+        confidence_decay_rate=conf_decay,
+        confidence_confirmation_threshold=conf_threshold,
+        confidence_boost_delta=conf_boost,
+        confidence_floor=conf_floor,
     )
 
     async def cleanup() -> None:
@@ -302,6 +331,7 @@ def _participant_paths(reg, participant_name: str, user_id: str = "") -> dict[st
         "personality": pf,
         "notes":       notes,
         "sysum":       str(base / f"{name}_sysum.json"),
+        "emotion":     str(base / f"{name}_emotion.json"),
     }
 
 
@@ -335,7 +365,7 @@ async def reset_store(req: ResetStoreRequest, request: Request) -> dict[str, Any
             await embedder.aclose()
 
         wiped_files = []
-        for key in ("personality", "notes", "sysum"):
+        for key in ("personality", "notes", "sysum", "emotion"):
             p = Path(paths[key])
             if p.exists():
                 try:
@@ -369,6 +399,7 @@ async def view_store(req: ViewStoreRequest, request: Request) -> dict[str, Any]:
     summary. Used by the 'View memory' button in the ensemble UI."""
     try:
         from promptlibretto.memory import (
+            EmotionalStateLayer,
             MemoryStore,
             OllamaEmbedder,
             PersonalityLayer,
@@ -427,14 +458,23 @@ async def view_store(req: ViewStoreRequest, request: Request) -> dict[str, Any]:
             s = SystemSummaryLayer(paths["sysum"])
             sysum = s.load().to_dict()
 
+        emotional_state = None
+        if Path(paths["emotion"]).exists():
+            emotion_dims = list(cfg.get("emotion_dimensions") or ["warmth", "tension", "trust", "playfulness"])
+            esl = EmotionalStateLayer(paths["emotion"], emotion_dims)
+            es = esl.load()
+            emotional_state = es.to_dict()
+            emotional_state["text"] = es.to_text()
+
         return {
-            "ok":           True,
-            "paths":        paths,
-            "turn_count":   turn_count,
-            "turns":        turns,
-            "personality":  personality,
-            "working_notes": notes,
+            "ok":             True,
+            "paths":          paths,
+            "turn_count":     turn_count,
+            "turns":          turns,
+            "personality":    personality,
+            "working_notes":  notes,
             "system_summary": sysum,
+            "emotional_state": emotional_state,
         }
     except HTTPException:
         raise
