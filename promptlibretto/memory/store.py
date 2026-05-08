@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+from .confidence import boosted_confidence, decayed_confidence
 from .embedder import OllamaEmbedder
 
 
@@ -19,6 +20,7 @@ class MemoryTurn:
     tags: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
     important: bool = False
+    confidence: float = 1.0                 # stored base confidence, decays at retrieval
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -27,6 +29,7 @@ class MemoryTurn:
 class MemoryChunk:
     turn: MemoryTurn
     score: float                            # cosine distance (lower = closer)
+    confidence: float = 1.0                # effective confidence after age-decay
 
 
 def _pack(vector: list[float]) -> bytes:
@@ -41,10 +44,18 @@ class MemoryStore:
         db_path: str,
         embedder: OllamaEmbedder,
         dimensions: int = 768,
+        confidence_decay_rate: float = 0.02,
+        confidence_confirmation_threshold: float = 0.25,  # distance; lower = more similar
+        confidence_boost_delta: float = 0.1,
+        confidence_floor: float = 0.1,
     ) -> None:
         self._path = db_path
         self.embedder = embedder
         self.dimensions = dimensions
+        self._decay_rate = confidence_decay_rate
+        self._confirm_threshold = confidence_confirmation_threshold
+        self._boost_delta = confidence_boost_delta
+        self._confidence_floor = confidence_floor
         self._db = self._connect()
 
     def _connect(self) -> sqlite3.Connection:
@@ -64,14 +75,15 @@ class MemoryStore:
 
         db.executescript(f"""
             CREATE TABLE IF NOT EXISTS memory_turns (
-                id        TEXT PRIMARY KEY,
+                id         TEXT PRIMARY KEY,
                 session_id TEXT NOT NULL DEFAULT '',
-                role      TEXT NOT NULL,
-                text      TEXT NOT NULL,
-                tags      TEXT NOT NULL DEFAULT '[]',
-                timestamp TEXT NOT NULL,
-                metadata  TEXT NOT NULL DEFAULT '{{}}',
-                important INTEGER NOT NULL DEFAULT 0
+                role       TEXT NOT NULL,
+                text       TEXT NOT NULL,
+                tags       TEXT NOT NULL DEFAULT '[]',
+                timestamp  TEXT NOT NULL,
+                metadata   TEXT NOT NULL DEFAULT '{{}}',
+                important  INTEGER NOT NULL DEFAULT 0,
+                confidence REAL NOT NULL DEFAULT 1.0
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS memory_vss USING vec0(
@@ -80,6 +92,14 @@ class MemoryStore:
             );
         """)
         db.commit()
+
+        # Migrate existing stores that pre-date the confidence column.
+        try:
+            db.execute("ALTER TABLE memory_turns ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")
+            db.commit()
+        except Exception:
+            pass  # column already exists
+
         return db
 
     async def upsert(self, turn: MemoryTurn) -> None:
@@ -92,10 +112,12 @@ class MemoryStore:
             )
         self._db.execute(
             """
-            INSERT INTO memory_turns (id, session_id, role, text, tags, timestamp, metadata, important)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO memory_turns
+                (id, session_id, role, text, tags, timestamp, metadata, important, confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                tags=excluded.tags, metadata=excluded.metadata, important=excluded.important
+                tags=excluded.tags, metadata=excluded.metadata,
+                important=excluded.important, confidence=excluded.confidence
             """,
             (
                 turn.id,
@@ -106,6 +128,7 @@ class MemoryStore:
                 turn.timestamp,
                 json.dumps(turn.metadata),
                 int(turn.important),
+                float(turn.confidence),
             ),
         )
         self._db.execute(
@@ -129,16 +152,30 @@ class MemoryStore:
             (_pack(vector), top_k),
         ).fetchall()
 
+        total = self.count()
         chunks: list[MemoryChunk] = []
         for row in rows:
             turn_row = self._db.execute(
                 "SELECT * FROM memory_turns WHERE id = ?", (row["turn_id"],)
             ).fetchone()
-            if turn_row:
-                chunks.append(MemoryChunk(
-                    turn=_row_to_turn(turn_row),
-                    score=row["distance"],
-                ))
+            if not turn_row:
+                continue
+            turn = _row_to_turn(turn_row)
+            turns_since = self._count_turns_after(turn.timestamp)
+            effective = decayed_confidence(
+                turn.confidence, turns_since, self._decay_rate, self._confidence_floor
+            )
+            # Confirmation boost: if this retrieval is a strong match, bump
+            # the stored confidence so repeated confirmation raises certainty.
+            distance = row["distance"]
+            if distance <= self._confirm_threshold and turn.confidence < 1.0:
+                new_conf = boosted_confidence(turn.confidence, self._boost_delta)
+                self._db.execute(
+                    "UPDATE memory_turns SET confidence = ? WHERE id = ?",
+                    (new_conf, turn.id),
+                )
+                self._db.commit()
+            chunks.append(MemoryChunk(turn=turn, score=distance, confidence=effective))
         return chunks
 
     async def forget(self, turn_id: str) -> None:
@@ -194,6 +231,24 @@ class MemoryStore:
     def count(self) -> int:
         return self._db.execute("SELECT COUNT(*) FROM memory_turns").fetchone()[0]
 
+    def _count_turns_after(self, timestamp: str) -> int:
+        """Return how many turns were recorded after the given timestamp."""
+        return self._db.execute(
+            "SELECT COUNT(*) FROM memory_turns WHERE timestamp > ?", (timestamp,)
+        ).fetchone()[0]
+
+    def boost_confidence(self, turn_id: str, delta: float = 0.1, cap: float = 1.0) -> None:
+        """Manually boost confidence for a specific turn (e.g. after external confirmation)."""
+        row = self._db.execute(
+            "SELECT confidence FROM memory_turns WHERE id = ?", (turn_id,)
+        ).fetchone()
+        if row:
+            new_conf = boosted_confidence(row["confidence"], delta, cap)
+            self._db.execute(
+                "UPDATE memory_turns SET confidence = ? WHERE id = ?", (new_conf, turn_id)
+            )
+            self._db.commit()
+
     def close(self) -> None:
         self._db.close()
 
@@ -214,4 +269,5 @@ def _row_to_turn(row: sqlite3.Row) -> MemoryTurn:
         timestamp=row["timestamp"],
         metadata=json.loads(row["metadata"]),
         important=bool(row["important"]),
+        confidence=float(row["confidence"]) if "confidence" in row.keys() else 1.0,
     )

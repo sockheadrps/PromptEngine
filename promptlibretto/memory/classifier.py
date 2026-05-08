@@ -23,34 +23,37 @@ class ClassifierResult:
     known_tags: list[str] = field(default_factory=list)
 
 _SYSTEM = (
-    "You are a context classifier. "
-    "Given a user message and relevant past exchanges, return ONLY a JSON array "
-    "of matching tags from the provided vocabulary. "
+    "You are a conversational context classifier. "
+    "Given recent dialogue and the latest message, identify which tags from the vocabulary "
+    "best describe the current conversational moment — including what the user is doing, "
+    "what the agent is likely experiencing, and what kind of situation this is. "
+    "Tags may describe topic, tone, agent state, or conversational dynamics. "
+    "Return ONLY a JSON array of applicable tags. "
     "Reply with nothing except the JSON array. Example: [\"tag_a\", \"tag_b\"]"
 )
 
 _USER_TMPL = """\
 Known tags: {tags}
 
-User message:
-{input}
-
-Relevant past exchanges:
+Recent context:
 {chunks}
 
-Which tags apply? Reply with a JSON array only."""
+Latest message:
+{input}
+
+Which tags describe this conversational moment? Reply with a JSON array only."""
 
 _USER_TMPL_WITH_DESC = """\
-Known tags and what each one means:
+Tags and what each one describes:
 {tag_lines}
 
-User message:
-{input}
-
-Relevant past exchanges:
+Recent context:
 {chunks}
 
-Which tags apply? Reply with a JSON array only."""
+Latest message:
+{input}
+
+Which tags describe this conversational moment? Reply with a JSON array only."""
 
 
 class Classifier:

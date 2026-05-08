@@ -9,11 +9,12 @@ from ..registry.state import RegistryState, SectionState
 
 @dataclass
 class MemoryAction:
-    type: str                       # "inject" | "persona" | "sentiment" | "template_var"
-    section: Optional[str] = None  # inject: which section; template_var: section owning the var
-    item: Optional[str] = None     # inject: item id to activate
-    value: Optional[str] = None    # persona / sentiment / template_var: target value
-    key: Optional[str] = None      # template_var: variable name
+    type: str                           # "inject" | "persona" | "sentiment" | "template_var" | "emotion"
+    section: Optional[str] = None      # inject: which section; template_var: section owning the var
+    item: Optional[str] = None         # inject: item id to activate
+    value: Optional[str] = None        # persona / sentiment / template_var: target value
+    key: Optional[str] = None          # template_var: variable name
+    deltas: dict[str, float] = field(default_factory=dict)  # emotion: dimension deltas
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "MemoryAction":
@@ -23,6 +24,7 @@ class MemoryAction:
             item=d.get("item"),
             value=d.get("value"),
             key=d.get("key"),
+            deltas=dict(d.get("deltas") or {}),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -35,6 +37,8 @@ class MemoryAction:
             out["value"] = self.value
         if self.key is not None:
             out["key"] = self.key
+        if self.deltas:
+            out["deltas"] = self.deltas
         return out
 
 
@@ -82,14 +86,24 @@ class Router:
     def tag_descriptions(self) -> dict[str, str]:
         return {r.tag: r.description for r in self._rules if r.description}
 
-    def mutate(self, base_state: RegistryState, tags: list[str]) -> RegistryState:
+    def mutate(
+        self,
+        base_state: RegistryState,
+        tags: list[str],
+    ) -> tuple[RegistryState, dict[str, float]]:
+        """Mutate registry state based on matched tags.
+
+        Returns (mutated_state, emotion_deltas). emotion_deltas is a dict of
+        {dimension: delta} aggregated across all fired rules — callers apply
+        these to EmotionalStateLayer after mutate() returns.
+        """
         if not tags:
-            return base_state
+            return base_state, {}
 
         tag_set = set(tags)
         active_rules = [r for r in self._rules if r.tag in tag_set]
         if not active_rules:
-            return base_state
+            return base_state, {}
 
         # Deep-copy all existing section states
         new_sections: dict[str, SectionState] = {
@@ -110,6 +124,7 @@ class Router:
             return new_sections[sec_id]
 
         applied: list[str] = []
+        emotion_deltas: dict[str, float] = {}
 
         for rule in active_rules:
             for action in rule.actions:
@@ -141,12 +156,23 @@ class Router:
                     _sec(sec_id).template_vars[var] = action.value
                     applied.append(f"{rule.tag} → tvar:{sec_id}.{var}={action.value}")
 
+                elif action.type == "emotion" and action.deltas:
+                    for dim, delta in action.deltas.items():
+                        emotion_deltas[dim] = emotion_deltas.get(dim, 0.0) + delta
+                    delta_str = ", ".join(f"{k}{v:+.2f}" for k, v in action.deltas.items())
+                    applied.append(f"{rule.tag} → emotion:{delta_str}")
+
+        # Cap per-turn aggregate deltas so multiple rules firing simultaneously
+        # can't slam a dimension to the ceiling in a single turn.
+        _MAX = 0.12
+        emotion_deltas = {k: max(-_MAX, min(_MAX, v)) for k, v in emotion_deltas.items()}
+
         ending_texts = [r.ending_text for r in active_rules if r.ending_text]
 
         new_state = RegistryState(sections=new_sections)
         new_state._applied_rules = applied  # type: ignore[attr-defined]
         new_state._rule_ending_text = "\n\n".join(ending_texts)  # type: ignore[attr-defined]
-        return new_state
+        return new_state, emotion_deltas
 
     @classmethod
     def from_registry_rules(cls, rules_raw: list[dict[str, Any]]) -> "Router":

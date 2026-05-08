@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Union
@@ -8,6 +9,7 @@ from ..registry.engine import Engine, GenerationResult
 from ..registry.state import RegistryState, SectionState
 from ..providers.base import ProviderAdapter
 from .classifier import Classifier, ClassifierResult
+from .emotional_state import EmotionalStateLayer
 from .personality import PersonalityLayer
 from .router import Router
 from .store import MemoryChunk, MemoryStore, MemoryTurn
@@ -32,6 +34,9 @@ class PreparedMemoryState:
     tags: list[str] = field(default_factory=list)
     applied: list[str] = field(default_factory=list)
     clf: Optional[ClassifierResult] = None
+    # Non-empty when auto_inject is enabled and no registry section declared
+    # memory_recall in template_vars. Callers append this to the system prompt.
+    auto_inject_recall: str = ""
 
 
 class MemoryEngine:
@@ -69,6 +74,13 @@ class MemoryEngine:
         system_summary_max_tokens: int = 300,
         system_summary_skip_section_keys: Optional[list[str]] = None,
         use_classifier: bool = True,
+        auto_inject: bool = False,
+        emotional_state: Optional[EmotionalStateLayer] = None,
+        emotion_decay_rate: float = 0.05,
+        confidence_decay_rate: float = 0.02,
+        confidence_confirmation_threshold: float = 0.25,
+        confidence_boost_delta: float = 0.1,
+        confidence_floor: float = 0.1,
     ) -> None:
         self._engine = engine
         self._store = store
@@ -103,6 +115,25 @@ class MemoryEngine:
         ])
         self._system_summary_last_at = 0  # model-turn counter at last summary update
         self._system_summary_model_turns = 0  # counts ONLY model-turns we summarized for
+        self._auto_inject = auto_inject
+        self._emotional_state = emotional_state
+        self._emotion_decay_rate = emotion_decay_rate
+        self._confidence_decay_rate = confidence_decay_rate
+        self._confidence_confirmation_threshold = confidence_confirmation_threshold
+        self._confidence_boost_delta = confidence_boost_delta
+        self._confidence_floor = confidence_floor
+
+    @property
+    def working_notes(self) -> Optional[WorkingNotesLayer]:
+        return self._working_notes
+
+    @property
+    def system_summary(self) -> Optional[SystemSummaryLayer]:
+        return self._system_summary
+
+    @property
+    def emotional_state(self) -> Optional[EmotionalStateLayer]:
+        return self._emotional_state
 
     async def prepare(
         self,
@@ -110,12 +141,18 @@ class MemoryEngine:
         base_state: Union[RegistryState, Mapping[str, Any], None] = None,
         *,
         other_name: Optional[str] = None,
+        skip_session_history: bool = False,
     ) -> PreparedMemoryState:
         """Run retrieve → classify → router → personality merge → tvar injection.
 
         Returns the mutated RegistryState plus diagnostics. Does NOT generate
         and does NOT write to the store. Callers (ensemble) own generation
         and call `record_turn()` separately.
+
+        ``skip_session_history`` suppresses the "Recent conversation" block in
+        memory_recall. Set True in ensemble mode where the full history is
+        already provided as message turns — avoids injecting the same transcript
+        twice and making both participants look like they share identical context.
         """
         if isinstance(base_state, Mapping):
             state = RegistryState.from_dict(dict(base_state))
@@ -126,26 +163,39 @@ class MemoryEngine:
 
         chunks = await self._store.retrieve(user_input, top_k=self._top_k)
         known_tags = self._router.known_tags
+        print(f"[memory] classifier check — use_classifier={self._use_classifier} known_tags={known_tags} model={self._classifier._model}")
         if self._use_classifier and known_tags:
+            print(f"[memory] calling classifier: model={self._classifier._model} input={user_input[:80]!r}")
             clf_result = await self._classifier.extract_tags(
                 user_input, chunks, known_tags,
                 tag_descriptions=self._router.tag_descriptions or None,
             )
+            print(f"[memory] classifier result — tags={clf_result.tags} raw={getattr(clf_result, 'raw_response', '')[:120]!r} error={clf_result.error!r}")
         else:
             from .classifier import ClassifierResult
             clf_result = ClassifierResult(model=self._classifier._model)
+            print(f"[memory] classifier skipped — tags=[]")
         tags = clf_result.tags
-        mutated = self._router.mutate(state, tags)
+        mutated, emotion_deltas = self._router.mutate(state, tags)
+        print(f"[memory] router result — applied_rules={getattr(mutated, '_applied_rules', [])} emotion_deltas={emotion_deltas}")
         applied: list[str] = getattr(mutated, "_applied_rules", [])
 
         if self._personality is not None:
             mutated = self._personality.merge_into_state(mutated)
 
+        # Apply rule-driven emotion deltas then decay toward neutral.
+        emotion_text = ""
+        if self._emotional_state is not None:
+            self._emotional_state.apply_deltas_and_decay(
+                emotion_deltas, self._emotion_decay_rate
+            )
+            emotion_text = self._emotional_state.state.to_text()
+
         # If a system summary exists, it covers the older history — only keep
         # the last 2 turns as immediate context so the prompt stays compact.
         summary_text = self._system_summary.text.strip() if self._system_summary else ""
         recent_limit = 2 if summary_text else self._history_window
-        history = self._store.recent_turns(self.session_id, limit=recent_limit)
+        history = [] if skip_session_history else self._store.recent_turns(self.session_id, limit=recent_limit)
         notes_text = self._working_notes.text if self._working_notes is not None else ""
         recall_text = _format_recall(
             history,
@@ -166,6 +216,7 @@ class MemoryEngine:
                 thought_chunks, other_name, current_session_id=self.session_id
             )
 
+        any_recall_declared = False
         for sec_key, sec in self._engine.registry.sections.items():
             # Collect template_vars declared at the section level or on any item.
             all_vars: set[str] = set(sec.template_vars or [])
@@ -180,6 +231,7 @@ class MemoryEngine:
                 sec_state.template_vars["user_input"] = user_input
             if "memory_recall" in all_vars:
                 sec_state.template_vars["memory_recall"] = recall_text
+                any_recall_declared = True
             if other_name and "other_name" in all_vars:
                 sec_state.template_vars["other_name"] = other_name
             if "thoughts_about_other" in all_vars:
@@ -187,9 +239,18 @@ class MemoryEngine:
             if "working_notes" in all_vars:
                 sec_state.template_vars["working_notes"] = notes_text
             if "system_summary" in all_vars:
-                sec_state.template_vars["system_summary"] = ""  # now embedded in recall_text
+                sec_state.template_vars["system_summary"] = summary_text
+            if "emotional_state" in all_vars:
+                sec_state.template_vars["emotional_state"] = emotion_text
             if "rule_ending" in all_vars:
                 sec_state.template_vars["rule_ending"] = getattr(mutated, "_rule_ending_text", "")
+
+        # When auto_inject is enabled and no section consumed memory_recall,
+        # surface the recall text so callers can append it to the system prompt.
+        auto_inject_recall = ""
+        if self._auto_inject and not any_recall_declared:
+            parts = [p for p in [recall_text, emotion_text] if p]
+            auto_inject_recall = "\n\n".join(parts)
 
         # Cache a "who you are" context using the SELECTED persona for this
         # turn — used by the next working-notes update so notes stay in-voice.
@@ -200,7 +261,8 @@ class MemoryEngine:
             self._last_other_name = other_name
 
         return PreparedMemoryState(
-            state=mutated, chunks=chunks, tags=tags, applied=applied, clf=clf_result
+            state=mutated, chunks=chunks, tags=tags, applied=applied, clf=clf_result,
+            auto_inject_recall=auto_inject_recall,
         )
 
     async def record_turn(
@@ -235,22 +297,29 @@ class MemoryEngine:
                 roles_present = {t.role for t in self._session_turns}
                 if "user" in roles_present and "assistant" in roles_present:
                     self._notes_last_update_at = count
-                    try:
-                        persona = self._build_persona_context()
-                        await self._working_notes.update(
-                            self._session_turns,
-                            self._notes_provider,
-                            self._notes_model,
-                            max_tokens=self._notes_max_tokens,
-                            persona=persona,
-                            self_name=self._participant_name or "you",
-                            other_name=self._last_other_name or "the other person",
-                            about_me_prompt=self._notes_about_me_prompt,
-                            about_other_prompt=self._notes_about_other_prompt,
-                        )
-                    except Exception:
-                        # Notes are best-effort; never fail a turn over them.
-                        pass
+                    persona = self._build_persona_context()
+                    turns_snapshot = list(self._session_turns)
+
+                    async def _do_notes_update(
+                        turns=turns_snapshot,
+                        persona=persona,
+                    ) -> None:
+                        try:
+                            await self._working_notes.update(
+                                turns,
+                                self._notes_provider,
+                                self._notes_model,
+                                max_tokens=self._notes_max_tokens,
+                                persona=persona,
+                                self_name=self._participant_name or "you",
+                                other_name=self._last_other_name or "the other person",
+                                about_me_prompt=self._notes_about_me_prompt,
+                                about_other_prompt=self._notes_about_other_prompt,
+                            )
+                        except Exception:
+                            pass
+
+                    asyncio.create_task(_do_notes_update())
 
         return turn
 
@@ -474,8 +543,9 @@ def _format_recall(
             break
 
     if cross_session:
+        from .confidence import hedge
         lines = [
-            f"- [{c.turn.role}] {_truncate(c.turn.text, 220)}"
+            f"- [{c.turn.role}] {hedge(_truncate(c.turn.text, 220), c.confidence)}"
             for c in cross_session
         ]
         sections.append("Relevant past notes:\n" + "\n".join(lines))
