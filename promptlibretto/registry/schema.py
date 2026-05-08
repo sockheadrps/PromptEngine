@@ -1,8 +1,8 @@
 """StateSchema: derive valid state settings from a Registry.
 
-Tools and studio use this to know what controls to render (what items are
-selectable, what slider range, which template vars exist) without having to
-inspect the raw section items themselves.
+Tools can use this to know what controls to render (what items are selectable,
+what slider range, which template vars exist) without having to inspect the raw
+section items themselves.
 
 Usage::
 

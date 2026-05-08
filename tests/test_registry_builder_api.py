@@ -246,88 +246,6 @@ class TestGenerationAndPolicy:
         assert result["output_policy"]["format"] == "markdown"
 
 
-# ── memory config ─────────────────────────────────────────────────────────────
-
-class TestMemoryConfig:
-    def test_configure_merges(self):
-        did, _ = make_draft()
-        api.memory_configure(did, {"classifier_url": "http://localhost:11434"})
-        result = api.memory_configure(did, {"embed_url": "http://localhost:11435"})
-        assert result["memory_config"]["classifier_url"] == "http://localhost:11434"
-        assert result["memory_config"]["embed_url"] == "http://localhost:11435"
-
-
-# ── classifier rules ──────────────────────────────────────────────────────────
-
-class TestClassifierRules:
-    def test_add_rule(self):
-        did, _ = make_draft()
-        result = api.classifier_rule_add(did, "frustration", "User is frustrated.")
-        assert result["rule"]["tag"] == "frustration"
-        assert result["total_rules"] == 1
-
-    def test_add_rule_with_actions(self):
-        did, _ = make_draft()
-        actions = [{"type": "emotion_delta", "dimension": "tension", "delta": 0.15}]
-        result = api.classifier_rule_add(did, "anger", "User is angry.", actions=actions)
-        assert result["rule"]["actions"][0]["dimension"] == "tension"
-
-    def test_update_rule(self):
-        did, _ = make_draft()
-        api.classifier_rule_add(did, "praise", "User is happy.")
-        result = api.classifier_rule_update(did, "praise", {"description": "Updated."})
-        assert result["rule"]["description"] == "Updated."
-        assert result["rule"]["tag"] == "praise"
-
-    def test_update_protects_tag(self):
-        did, _ = make_draft()
-        api.classifier_rule_add(did, "praise", "Happy.")
-        api.classifier_rule_update(did, "praise", {"tag": "evil", "description": "X"})
-        rule = api.draft_get(did)["registry"]["memory_rules"][0]
-        assert rule["tag"] == "praise"
-
-    def test_remove_rule(self):
-        did, _ = make_draft()
-        api.classifier_rule_add(did, "to_remove", "Gone.")
-        result = api.classifier_rule_remove(did, "to_remove")
-        assert result["total_rules"] == 0
-
-    def test_remove_unknown_rule_raises(self):
-        did, _ = make_draft()
-        with pytest.raises(KeyError):
-            api.classifier_rule_remove(did, "ghost")
-
-    def test_update_unknown_rule_raises(self):
-        did, _ = make_draft()
-        with pytest.raises(KeyError):
-            api.classifier_rule_update(did, "ghost", {"description": "X"})
-
-
-# ── style blend ───────────────────────────────────────────────────────────────
-
-class TestStyleBlend:
-    def test_set_blend(self):
-        did, _ = make_draft()
-        result = api.style_blend_set(did, "personas", "playfulness", "calm_expert", "chaos_agent", 0.6)
-        sb = result["style_blend"]["personas"]
-        assert sb["axis"] == "playfulness"
-        assert sb["threshold"] == 0.6
-
-    def test_disable_one_section(self):
-        did, _ = make_draft()
-        api.style_blend_set(did, "personas", "playfulness", "a", "b")
-        api.style_blend_set(did, "sentiment", "tension", "c", "d")
-        api.style_blend_disable(did, "personas")
-        sb = api.draft_get(did)["registry"]["style_blend"]
-        assert "personas" not in sb
-        assert "sentiment" in sb
-
-    def test_disable_all(self):
-        did, _ = make_draft()
-        api.style_blend_set(did, "personas", "playfulness", "a", "b")
-        api.style_blend_disable(did)
-        assert api.draft_get(did)["registry"]["style_blend"] == {}
-
 
 # ── validation ────────────────────────────────────────────────────────────────
 
@@ -355,15 +273,6 @@ class TestValidation:
         result = api.draft_validate(did)
         assert result["ok"] is True, result["errors"]
 
-    def test_memory_rules_without_config_warns(self):
-        did, _ = make_draft(title="T", description="D")
-        for sec in ("base_context", "personas", "sentiment", "output_prompt_directions"):
-            api.section_add_item(did, sec, "x", {"text": "x", "context": "x"})
-        api.section_add_item(did, "prompt_endings", "e", {"name": "end", "text": "Done."})
-        api.classifier_rule_add(did, "tag", "desc")
-        result = api.draft_validate(did)
-        warning_msgs = " ".join(w["message"] for w in result["warnings"])
-        assert "classifier_url" in warning_msgs
 
     def test_fragment_condition_not_in_vars_warns(self):
         did, _ = make_draft()
@@ -406,13 +315,6 @@ class TestExport:
         result = api.draft_export(did)
         assert "static_injections" in result["registry"]
 
-    def test_export_memory_recall_default_item_present(self):
-        did, _ = make_draft()
-        result = api.draft_export(did)
-        reg = result["registry"]
-        assert "memory_recall" in reg
-        items = reg["memory_recall"]["items"]
-        assert any("{memory_recall}" in (it.get("text", "")) for it in items)
 
     def test_export_preserves_assembly_order(self):
         did, _ = make_draft()

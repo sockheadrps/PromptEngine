@@ -1,7 +1,6 @@
-"""Registry model dataclasses — schema v2.
+"""Registry model dataclasses.
 
-JSON-safe, declarative. Maps 1:1 to the JSON the studio frontend
-imports/exports. No rendering logic here — see :mod:`hydrate`.
+JSON-safe and declarative. No rendering logic here; see :mod:`hydrate`.
 """
 from __future__ import annotations
 
@@ -244,7 +243,6 @@ class RuntimeInjection(BaseItem, DynamicMixin):
 
     text: str = ""
     include_sections: list[str] = field(default_factory=list)
-    memory_tag: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         out = self._base_dict()
@@ -253,8 +251,6 @@ class RuntimeInjection(BaseItem, DynamicMixin):
             out["text"] = self.text
         if self.include_sections:
             out["include_sections"] = list(self.include_sections)
-        if self.memory_tag:
-            out["memory_tag"] = self.memory_tag
         return out
 
 
@@ -263,14 +259,11 @@ class StaticInjection(BaseItem):
     """Item for the ``static_injections`` section."""
 
     text: str = ""
-    memory_tag: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         out = self._base_dict()
         if self.text:
             out["text"] = self.text
-        if self.memory_tag:
-            out["memory_tag"] = self.memory_tag
         return out
 
 
@@ -420,9 +413,6 @@ class Registry:
     routes: dict[str, Route] = field(default_factory=dict)
     generation: dict[str, Any] = field(default_factory=dict)
     output_policy: dict[str, Any] = field(default_factory=dict)
-    memory_rules: list[dict[str, Any]] = field(default_factory=list)
-    memory_config: dict[str, Any] = field(default_factory=dict)
-    style_blend: dict[str, Any] = field(default_factory=dict)
     default_state: Optional[RegistryState] = None
 
     def to_dict(self, *, wrap: bool = True) -> dict[str, Any]:
@@ -444,12 +434,6 @@ class Registry:
             body["generation"] = dict(self.generation)
         if self.output_policy:
             body["output_policy"] = dict(self.output_policy)
-        if self.memory_rules:
-            body["memory_rules"] = list(self.memory_rules)
-        if self.memory_config:
-            body["memory_config"] = dict(self.memory_config)
-        if self.style_blend:
-            body["style_blend"] = dict(self.style_blend)
         if self.default_state:
             body["default_state"] = self.default_state.to_dict()
         return {"registry": body} if wrap else body
@@ -467,8 +451,7 @@ class Registry:
 
         RESERVED = {
             "version", "title", "description", "assembly_order",
-            "routes", "generation", "output_policy", "memory_rules",
-            "memory_config", "style_blend", "default_state",
+            "routes", "generation", "output_policy", "default_state",
         }
 
         sections: dict[str, Section] = {}
@@ -498,8 +481,5 @@ class Registry:
             routes=routes,
             generation=dict(data.get("generation") or {}),
             output_policy=dict(data.get("output_policy") or {}),
-            memory_rules=list(data.get("memory_rules") or []),
-            memory_config=dict(data.get("memory_config") or {}),
-            style_blend=dict(data.get("style_blend") or {}),
             default_state=default_state,
         )

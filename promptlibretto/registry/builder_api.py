@@ -17,7 +17,6 @@ KNOWN_SECTIONS: tuple[str, ...] = (
     "static_injections",
     "runtime_injections",
     "output_prompt_directions",
-    "memory_recall",
     "prompt_endings",
 )
 
@@ -41,20 +40,9 @@ def _initial_registry() -> dict[str, Any]:
         "assembly_order": [],
         "generation": {},
         "output_policy": {},
-        "memory_rules": [],
-        "memory_config": {},
-        "style_blend": {},
     }
     for key in KNOWN_SECTIONS:
         reg[key] = {"required": key in REQUIRED_SECTIONS, "template_vars": [], "items": []}
-    reg["memory_recall"].update({
-        "template_vars": ["memory_recall"],
-        "items": [{"id": "recall", "text": "{memory_recall}"}],
-    })
-    # prompt_endings always needs system_summary + rule_ending so the memory
-    # runtime can inject emotional state / classifier ending_text. Safe to
-    # include even when memory is disabled — the runtime passes empty strings.
-    reg["prompt_endings"]["template_vars"] = ["system_summary", "rule_ending"]
     return reg
 
 
@@ -134,14 +122,6 @@ def draft_validate(draft_id: str) -> dict[str, Any]:
                 "message": f"Token '{token}' references unknown section '{sec}'.",
             })
 
-    if "memory_recall.text" in reg.get("assembly_order", []):
-        items = reg.get("memory_recall", {}).get("items", [])
-        if not items:
-            warnings.append({
-                "path": "assembly_order",
-                "message": "memory_recall.text is listed but memory_recall has no item.",
-            })
-
     for sec_key in KNOWN_SECTIONS:
         sec = reg.get(sec_key, {})
         tvars = set(sec.get("template_vars", []))
@@ -154,27 +134,12 @@ def draft_validate(draft_id: str) -> dict[str, Any]:
                         "message": f"Fragment condition '{cond}' not declared in section template_vars.",
                     })
 
-    for i, rule in enumerate(reg.get("memory_rules", [])):
-        if not rule.get("tag"):
-            errors.append({"path": f"memory_rules[{i}]", "message": "Rule missing 'tag'."})
-        if not rule.get("description"):
-            errors.append({"path": f"memory_rules[{i}]", "message": "Rule missing 'description'."})
-
     for item in reg.get("prompt_endings", {}).get("items", []):
         if not (item.get("name") or item.get("id")):
             errors.append({
                 "path": "prompt_endings.items",
                 "message": "Prompt ending item missing 'name'.",
             })
-
-    if reg.get("memory_rules"):
-        mc = reg.get("memory_config", {})
-        for field_name in ("classifier_url", "embed_url"):
-            if not mc.get(field_name):
-                warnings.append({
-                    "path": "memory_config",
-                    "message": f"memory_rules defined but '{field_name}' not set in memory_config.",
-                })
 
     return {"ok": len(errors) == 0, "errors": errors, "warnings": warnings}
 
@@ -248,7 +213,6 @@ def section_add_item(
     runtime_injections   → {text}
     output_prompt_dirs   → {text, groups?}
     prompt_endings       → {name?, text, items:[endings]}
-    memory_recall        → {text}
     user_message         → {text}
     """
     reg = _get(draft_id)
@@ -289,8 +253,6 @@ def section_add_item(
         item = {"id": item_id, "text": fields.get("text", "")}
         if "groups" in fields:
             item["groups"] = fields["groups"]
-    elif section_key == "memory_recall":
-        item = {"id": item_id, "text": fields.get("text", f"{{{item_id}}}")}
     else:
         item = {"id": item_id}
         item.update({k: v for k, v in fields.items() if k != "id"})
@@ -428,88 +390,3 @@ def output_policy_set(draft_id: str, policy: dict[str, Any]) -> dict[str, Any]:
     reg["output_policy"].update(policy)
     return {"output_policy": reg["output_policy"]}
 
-
-# ── memory ───────────────────────────────────────────────────────────────────
-
-def memory_configure(draft_id: str, config: dict[str, Any]) -> dict[str, Any]:
-    """Merge memory_config fields."""
-    reg = _get(draft_id)
-    reg["memory_config"].update(config)
-    return {"memory_config": reg["memory_config"]}
-
-
-# ── classifier rules ─────────────────────────────────────────────────────────
-
-def classifier_rule_add(
-    draft_id: str,
-    tag: str,
-    description: str,
-    ending_text: str = "",
-    actions: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    """Add a classifier rule."""
-    reg = _get(draft_id)
-    rule: dict[str, Any] = {"tag": tag, "description": description}
-    if ending_text:
-        rule["ending_text"] = ending_text
-    if actions:
-        rule["actions"] = actions
-    reg["memory_rules"].append(rule)
-    return {"rule": rule, "total_rules": len(reg["memory_rules"])}
-
-
-def classifier_rule_update(
-    draft_id: str,
-    tag: str,
-    fields: dict[str, Any],
-) -> dict[str, Any]:
-    """Update an existing classifier rule by tag."""
-    reg = _get(draft_id)
-    for rule in reg["memory_rules"]:
-        if rule["tag"] == tag:
-            for k, v in fields.items():
-                if k != "tag":
-                    rule[k] = v
-            return {"rule": rule}
-    raise KeyError(f"Rule with tag '{tag}' not found.")
-
-
-def classifier_rule_remove(draft_id: str, tag: str) -> dict[str, Any]:
-    """Remove a classifier rule by tag."""
-    reg = _get(draft_id)
-    before = len(reg["memory_rules"])
-    reg["memory_rules"] = [r for r in reg["memory_rules"] if r["tag"] != tag]
-    if len(reg["memory_rules"]) == before:
-        raise KeyError(f"Rule with tag '{tag}' not found.")
-    return {"removed": tag, "total_rules": len(reg["memory_rules"])}
-
-
-# ── style blend ──────────────────────────────────────────────────────────────
-
-def style_blend_set(
-    draft_id: str,
-    section: str,
-    axis: str,
-    primary: str,
-    secondary: str,
-    threshold: float = 0.60,
-) -> dict[str, Any]:
-    """Set style blending for personas or sentiment."""
-    reg = _get(draft_id)
-    reg["style_blend"][section] = {
-        "axis": axis,
-        "primary": primary,
-        "secondary": secondary,
-        "threshold": threshold,
-    }
-    return {"style_blend": reg["style_blend"]}
-
-
-def style_blend_disable(draft_id: str, section: str | None = None) -> dict[str, Any]:
-    """Disable style blending for one section or all sections."""
-    reg = _get(draft_id)
-    if section:
-        reg["style_blend"].pop(section, None)
-    else:
-        reg["style_blend"] = {}
-    return {"style_blend": reg["style_blend"]}
