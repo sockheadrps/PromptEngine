@@ -78,7 +78,6 @@ class EnsembleEngine:
     def _build_messages_from_state(
         self,
         speaker: Participant,
-        new_input: str,
         state: Optional[RegistryState],
         *,
         scene_context: str = "",
@@ -100,9 +99,7 @@ class EnsembleEngine:
         for turn in self.history:
             role = "assistant" if turn.speaker == speaker.name else "user"
             messages.append(ProviderMessage(role=role, content=turn.text))
-        if self.history:
-            messages.append(ProviderMessage(role="user", content=new_input))
-        else:
+        if not self.history:
             messages.append(ProviderMessage(
                 role="user",
                 content=(
@@ -162,8 +159,28 @@ class EnsembleEngine:
                     current_input,
                     base_state=speaker.state,
                     other_name=other.name,
+                    skip_session_history=True,
                 )
                 mutated_state = prepared.state
+
+                # Style modulation: blend persona/sentiment based on emotional
+                # state values. Runs after prepare() so emotion is up-to-date.
+                if (
+                    mutated_state is not None
+                    and speaker.engine is not None
+                    and speaker.memory.emotional_state is not None
+                ):
+                    blend_cfg = speaker.engine.registry.style_blend
+                    if blend_cfg:
+                        from promptlibretto.memory.style_blend import apply_style_blend
+                        mutated_state, _blend_log = apply_style_blend(
+                            mutated_state,
+                            blend_cfg,
+                            speaker.engine.registry,
+                            speaker.memory.emotional_state.state.dimensions,
+                        )
+                        if _blend_log:
+                            prepared._style_blend_log = _blend_log  # type: ignore[attr-defined]
 
             if speaker.human:
                 if on_human is None:
@@ -174,11 +191,17 @@ class EnsembleEngine:
             else:
                 messages = self._build_messages_from_state(
                     speaker,
-                    current_input,
                     mutated_state,
                     scene_context=scene_context,
                     other_name=other.name,
                 )
+                # Auto-inject: append memory recall when the registry has no
+                # memory_recall section and MemoryEngine.auto_inject is enabled.
+                if prepared is not None and prepared.auto_inject_recall and messages:
+                    messages[0] = ProviderMessage(
+                        role="system",
+                        content=messages[0].content.rstrip() + "\n\n" + prepared.auto_inject_recall,
+                    )
                 request = self._build_request(speaker, messages)
                 provider = speaker.provider()
 
@@ -214,9 +237,10 @@ class EnsembleEngine:
                         trace["applied_rules"] = list(prepared.applied)
                         trace["chunks"] = [
                             {
-                                "role":  c.turn.role,
-                                "score": round(c.score, 4),
-                                "text":  c.turn.text[:220],
+                                "role":       c.turn.role,
+                                "score":      round(c.score, 4),
+                                "confidence": round(c.confidence, 3),
+                                "text":       c.turn.text[:220],
                             }
                             for c in (prepared.chunks or [])[:5]
                         ]
@@ -238,14 +262,14 @@ class EnsembleEngine:
                             trace.setdefault("resolved_tvars", {})["rule_ending"] = rule_ending
                     # Surface working notes (running summary) when present.
                     if speaker.memory is not None:
-                        wn = getattr(speaker.memory, "_working_notes", None)
+                        wn = speaker.memory.working_notes
                         if wn is not None:
                             trace["working_notes"] = {
                                 "text":         wn.text,
                                 "last_updated": wn.notes.last_updated,
                                 "update_count": wn.notes.update_count,
                             }
-                        ss = getattr(speaker.memory, "_system_summary", None)
+                        ss = speaker.memory.system_summary
                         if ss is not None:
                             trace["system_summary"] = {
                                 "text":         ss.text,
@@ -253,6 +277,17 @@ class EnsembleEngine:
                                 "update_count": ss.summary.update_count,
                                 "source_chars": ss.summary.source_chars,
                             }
+                        esl = speaker.memory.emotional_state
+                        if esl is not None:
+                            es = esl.state
+                            trace["emotional_state"] = {
+                                "dimensions": dict(es.dimensions),
+                                "turn_count": es.turn_count,
+                                "text": es.to_text(),
+                            }
+                        blend_log = getattr(prepared, "_style_blend_log", None)
+                        if blend_log:
+                            trace["style_blend"] = blend_log
                     await on_prepare(speaker.name, turn_idx, trace)
 
                 if on_chunk is not None:
