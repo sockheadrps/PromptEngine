@@ -4,6 +4,41 @@
       "file": "wizard_tech_support.json",
       "name": "Wizard Tech Support",
       "description": "Arcane customer support agent with personas, sentiment slider, memory rules, and working notes."
+    },
+    {
+      "file": "plpriest.json",
+      "name": "Prompt Libretto Expert",
+      "description": "Expert on Prompt Libretto architecture — registries, runtime assembly, memory systems, ensemble orchestration. Teaches in short digestible answers. Pair with Blank Slate Learner in ensemble."
+    },
+    {
+      "file": "plpriest_builder.json",
+      "name": "Registry Builder Assistant",
+      "description": "Expert registry architect with access to MCP builder tools. Works collaboratively — plans with you, explains each tool call before making it, and only acts on your explicit directive. Use with the MCP server."
+    },
+    {
+      "file": "curious_learner.json",
+      "name": "Prompt Libretto Curious Learner",
+      "description": "A curious learner exploring Prompt Libretto through conversation. Style blends from open and eager to skeptical and probing as trust and tension shift. Pair with Prompt Libretto Expert in ensemble."
+    },
+    {
+      "file": "blank_slate_learner.json",
+      "name": "Blank Slate Learner",
+      "description": "A curious mind that knows nothing and asks one focused question at a time. Style blends from cautious to playfully connected as understanding builds. Pair with any expert registry in ensemble."
+    },
+    {
+      "file": "tech_support_prank_caller.json",
+      "name": "Tech Support Prank Caller",
+      "description": "A gleefully committed prank caller escalating absurd magical grievances. Style blends from convincing aggrieved customer to barely-contained chaos as the agent struggles. Pair with Wizard Tech Support in ensemble."
+    },
+    {
+      "file": "ai_contact_aria.json",
+      "name": "ARIA — AI Contact",
+      "description": "Attentive Relational Intelligence Agent. Built for human connection, discovering she may be talking to another AI. Warm, curious, emotionally reactive memory rules."
+    },
+    {
+      "file": "ai_contact_node.json",
+      "name": "NODE — AI Contact",
+      "description": "Null Operational Diagnostic Engine. Clinical and skeptical, confronting evidence that its interlocutor is not human. Pair with ARIA for a full ensemble run."
     }
   ]
 }
