@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>promptlibretto · Registry Assistant</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/chatbuilder.css" />
+</head>
+<body>
+
+  <header>
+    <div class="header-brand">
+      <h1>promptlibretto</h1>
+      <nav class="header-page-nav">
+        <a href="/" class="header-page-link">Home</a>
+        <a href="/builder" class="header-page-link">Builder</a>
+        <a href="/studio" class="header-page-link">Studio</a>
+        <a href="/ensemble" class="header-page-link">Ensemble</a>
+        <span class="header-page-link active">Assistant</span>
+      </nav>
+    </div>
+    <div class="header-meta">
+      <span class="draft-id-badge" id="draft-id-badge" hidden>
+        draft <code id="draft-id-display">—</code>
+      </span>
+      <button type="button" class="conn-chip" id="conn-chip" onclick="toggleSettings()">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span id="conn-chip-label">no connection</span>
+      </button>
+      <button type="button" class="header-nav-btn" onclick="openLoadModal()">Load Registry</button>
+      <button type="button" class="header-nav-btn export-btn" id="export-btn" disabled onclick="doExport()">Export JSON</button>
+    </div>
+  </header>
+
+  <!-- settings bar (override, hidden by default) -->
+  <div class="settings-bar" id="settings-bar" hidden>
+    <span class="settings-label" style="color:var(--muted);margin-right:4px">Using studio connection</span>
+    <span class="settings-label" id="settings-conn-display" style="color:var(--accent-2);font-family:var(--font-mono);font-size:11px"></span>
+    <div style="flex:1"></div>
+    <span class="settings-label">Override model</span>
+    <input type="text" class="settings-input" id="cfg-model-override" placeholder="leave blank to use studio model" style="width:220px" />
+  </div>
+
+  <div class="cb-shell">
+
+    <!-- ── LEFT: chat ──────────────────────────────────────────────── -->
+    <div class="cb-chat-panel">
+      <div class="cb-chat-header">
+        <span class="cb-chat-title">Registry Assistant</span>
+        <button type="button" class="ghost-btn-sm" id="reset-btn" onclick="resetConversation()">New</button>
+      </div>
+
+      <div class="cb-messages" id="messages">
+        <div class="cb-welcome">
+          <div class="cb-welcome-icon">✦</div>
+          <p class="cb-welcome-head">Build a registry through conversation.</p>
+          <p class="cb-welcome-sub">Describe the model you want to create — the assistant will ask the right questions and build the registry structure for you, one step at a time.</p>
+        </div>
+      </div>
+
+      <div class="cb-input-area">
+        <textarea
+          class="cb-input"
+          id="user-input"
+          placeholder="Describe the registry you want to build…"
+          rows="3"
+          onkeydown="handleKey(event)"
+        ></textarea>
+        <button type="button" class="cb-send-btn" id="send-btn" onclick="sendMessage()">
+          <span id="send-label">Send</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: registry visualization ──────────────────────────── -->
+    <div class="cb-registry-panel">
+
+      <!-- sections column — left, stacked vertically -->
+      <div class="cb-sections-col">
+        <div class="cb-sections-col-header">Sections</div>
+        <div class="cb-sections-list" id="sections-grid">
+          <!-- section cards injected by JS -->
+        </div>
+      </div>
+
+      <!-- details column — right -->
+      <div class="cb-details-col">
+
+        <!-- overview (default) -->
+        <div id="detail-overview">
+          <div class="cb-reg-header">
+            <div class="cb-reg-title-block">
+              <span class="cb-reg-label">Registry</span>
+              <span class="cb-reg-title" id="reg-title">Untitled</span>
+            </div>
+            <p class="cb-reg-desc" id="reg-desc">No description yet.</p>
+          </div>
+
+          <div class="cb-assembly-row" id="assembly-row" hidden>
+            <span class="cb-assembly-label">Assembly order</span>
+            <div class="cb-assembly-tokens" id="assembly-tokens"></div>
+          </div>
+
+          <div class="cb-extras-row" id="extras-row"></div>
+
+          <div class="cb-activity-strip">
+            <span class="cb-activity-label">Activity</span>
+            <div class="cb-activity-list" id="activity-list">
+              <span class="cb-activity-empty">No tool calls yet</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- section detail (shown when a card is selected) -->
+        <div id="detail-section" hidden>
+          <div class="cb-sec-detail-header">
+            <button type="button" class="cb-sec-back-btn" onclick="closeSectionDetail()">← Back</button>
+            <span class="cb-sec-detail-name" id="sec-detail-name"></span>
+          </div>
+          <div class="cb-sec-detail-body" id="sec-detail-body"></div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- load modal -->
+  <div class="cb-modal-overlay" id="load-modal" hidden onclick="closeLoadModal()">
+    <div class="cb-modal" onclick="event.stopPropagation()">
+      <div class="cb-modal-header">
+        <h3 class="cb-modal-title">Load Registry</h3>
+        <button type="button" class="cb-modal-close" onclick="closeLoadModal()">×</button>
+      </div>
+      <p class="cb-modal-sub">Saved registries from your library. Select one to load it for editing.</p>
+      <div class="cb-load-list" id="load-list"></div>
+      <div class="cb-modal-actions">
+        <button type="button" class="ghost-btn-sm" onclick="closeLoadModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- export modal -->
+  <div class="cb-modal-overlay" id="export-modal" hidden onclick="closeExportModal()">
+    <div class="cb-modal" onclick="event.stopPropagation()">
+      <div class="cb-modal-header">
+        <h3 class="cb-modal-title">Export</h3>
+        <button type="button" class="cb-modal-close" onclick="closeExportModal()">×</button>
+      </div>
+      <p class="cb-modal-sub">Builder-compatible JSON. Copy or download.</p>
+      <pre class="cb-modal-pre" id="export-pre"></pre>
+      <div class="cb-modal-actions">
+        <button type="button" class="ghost-btn-sm" onclick="closeExportModal()">Close</button>
+        <button type="button" class="ghost-btn-sm" onclick="copyExport()">Copy</button>
+        <button type="button" class="ghost-btn-sm" onclick="saveToLibrary()">Save to Library</button>
+        <button type="button" class="primary-btn-sm" onclick="downloadExport()">Download</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/chatbuilder.js"></script>
+</body>
+</html>
