@@ -1,6 +1,11 @@
 const SNAPSHOT_KEY = "pl-registry-snapshots-v1";
 const REGISTRY_KEY = "pl-registry-v2";
 const CONN_KEY = "promptlibretto.connection.v1";
+const MEMORY_ENABLED = localStorage.getItem('promptlibretto.memory-enabled.v1') === 'true';
+
+function applyGlobalMemoryFlag() {
+  if (!MEMORY_ENABLED) document.body.classList.add('memory-globally-disabled');
+}
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
@@ -237,7 +242,7 @@ async function loadSnapshot(side) {
   const setCheck = (id, val) => { const el = document.getElementById(id); if (el) el.checked = !!val; };
   const setNum   = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
   // Auto-enable the memory pipeline toggle when the registry has memory configured.
-  if (hasMem) setCheck(`${side}-memory`, true);
+  if (hasMem && MEMORY_ENABLED) setCheck(`${side}-memory`, true);
   setCheck(`${side}-working_notes_enabled`,   mc.working_notes_enabled);
   setCheck(`${side}-system_summary_enabled`,  mc.system_summary_enabled);
   setCheck(`${side}-auto_inject`,             mc.auto_inject);
@@ -269,7 +274,7 @@ async function loadSnapshot(side) {
   saveParticipantSettings();
 }
 
-const ENSEMBLE_RUNTIME_VARS = new Set(["memory_recall", "other_name", "thoughts_about_other", "working_notes", "system_summary", "rule_ending", "emotional_state"]);
+const ENSEMBLE_RUNTIME_VARS = new Set(["name", "memory_recall", "other_name", "thoughts_about_other", "working_notes", "system_summary", "rule_ending", "emotional_state"]);
 
 function rerenderTvars(side) {
   const raw = document.getElementById(`${side}-registry`)?.value?.trim();
@@ -311,8 +316,8 @@ function renderTvarInputs(side, reg) {
 
   container.innerHTML =
     `<details class="pcard-tvars-detail" open>` +
-    `<summary class="pcard-tvars-summary">Template vars</summary>` +
-    `<div class="pcard-tvars-body">${rows}</div>` +
+    `<summary>Template vars</summary>` +
+    `<div class="pcard-tvars-grid">${rows}</div>` +
     `</details>`;
 
   container.querySelectorAll(".pcard-tvar-input").forEach((inp) => {
@@ -375,6 +380,20 @@ function setStatus(msg) {
 function setRunning(running) {
   document.getElementById("btn-run").disabled = running;
   document.getElementById("btn-stop").classList.toggle("visible", running);
+}
+
+function injectNameIntoState(regObj, state, name) {
+  if (!state || !name) return;
+  const reg = regObj?.registry ?? regObj;
+  if (!reg) return;
+  for (const [secKey, sec] of Object.entries(reg)) {
+    if (!sec || typeof sec !== 'object') continue;
+    if (Array.isArray(sec.template_vars) && sec.template_vars.includes('name')) {
+      if (!state[secKey]) state[secKey] = {};
+      if (!state[secKey].template_vars) state[secKey].template_vars = {};
+      state[secKey].template_vars.name = name;
+    }
+  }
 }
 
 function applySectionRandomMode(mode, regObj, state) {
@@ -537,6 +556,10 @@ async function startEnsemble() {
   const modelA = document.getElementById("a-model").value.trim() || conn.model || "llama3";
   const modelB = document.getElementById("b-model").value.trim() || conn.model || "llama3";
 
+  // Auto-inject participant name into any section that declares {name} as a template var.
+  injectNameIntoState(registryA, participantState.a, nameA);
+  injectNameIntoState(registryB, participantState.b, nameB);
+
   _runTraceLog = [];
   _runNames = { a: nameA, b: nameB };
   clearConversation();
@@ -658,7 +681,8 @@ async function startEnsemble() {
     // Backend gating is purely the auto/step toggle — we never gate at the
     // backend for TTS. TTS pacing is a frontend visual: bubbles render
     // blurred until their audio plays. Generation runs as fast as it can.
-    auto_run: !!document.getElementById("auto-run")?.checked,
+    auto_run: !!document.getElementById("auto-run")?.checked &&
+      !(document.getElementById("a-generate-opinion")?.checked || document.getElementById("b-generate-opinion")?.checked),
     connection: {
       base_url: conn.baseUrl,
       chat_path: conn.chatPath || "/api/chat",
@@ -937,8 +961,8 @@ function speakIfEnabled(side, text, bubbleEl, onReveal) {
   return true;
 }
 
-async function triggerStep() {
-  if (!activeSessionId || !_stepPending) return;
+async function triggerStep(force = false) {
+  if (!activeSessionId || (!_stepPending && !force)) return;
   _stepPending = false;
   refreshStepButton();
   try {
@@ -1225,8 +1249,15 @@ let currentBubble = null;
 let turnCount = 0;
 const _sidesSpoken = new Set();
 const _turnStartMs = {};
+let _lastSpeakerSide = null;
+let _opinionState = 'idle'; // 'idle' | 'running' | 'done'
+let _opinionDoneCallback = null;
+const _opinionPermContext = { a: null, b: null }; // stored after first generation, reused forever
+const _opinionGenCount   = { a: 0,    b: 0    }; // how many times opinion has been generated per side
+const _opinionPrev       = { a: { me: '', other: '' }, b: { me: '', other: '' } }; // last successful output
 
 function syncSidePanelThoughtsTab(side, hasMemory) {
+  if (!MEMORY_ENABLED) return;
   const panel = document.getElementById(`side-${side}`);
   if (!panel) return;
   const thoughtsTab = panel.querySelector(`.side-tab[data-tab="thoughts"]`);
@@ -1336,6 +1367,8 @@ function handleEvent(event, nameA, nameB) {
     // Speak the just-finalized turn if TTS is on for that participant.
     const speakerSide = event.speaker === nameA ? "a" : "b";
     _sidesSpoken.add(speakerSide);
+    _lastSpeakerSide = speakerSide;
+    _opinionState = 'idle';
     const gate = getTurnGate(event.turn);
     const reveal = () => revealTurnGate(event.turn);
     if (event.text && bubbleRef) {
@@ -1351,8 +1384,29 @@ function handleEvent(event, nameA, nameB) {
     }
   } else if (event.type === "awaiting_step") {
     activeSessionId = event.session_id;
-    _stepPending = true;
-    refreshStepButton();
+    // If Generate Opinion is on for the last speaker, auto-step once opinion finishes.
+    const opinionSide = _lastSpeakerSide;
+    const opinionEnabled = !MEMORY_ENABLED && opinionSide &&
+      document.getElementById(`${opinionSide}-generate-opinion`)?.checked;
+    const autoOn = !!document.getElementById("auto-run")?.checked;
+    const afterOpinion = () => {
+      if (autoOn) {
+        triggerStep(true);
+      } else {
+        _stepPending = true;
+        refreshStepButton();
+      }
+    };
+    if (opinionEnabled) {
+      if (_opinionState === 'done' || _opinionState === 'idle') {
+        _opinionState = 'idle';
+        afterOpinion();
+      } else {
+        _opinionDoneCallback = afterOpinion;
+      }
+    } else {
+      afterOpinion();
+    }
   } else if (event.type === "awaiting_human") {
     const side = event.speaker === nameA ? "a" : "b";
     showHumanPrompt(side, event.speaker, event.turn + 1, event.last_input, event.session_id);
@@ -1452,16 +1506,32 @@ function clearConversation() {
   _turnGates.clear();
   _sidesSpoken.clear();
   _runTraceLog = [];
+  _lastSpeakerSide = null;
+  _opinionState = 'idle';
+  _opinionDoneCallback = null;
+  _opinionPermContext.a = null; _opinionPermContext.b = null;
+  _opinionGenCount.a = 0;      _opinionGenCount.b = 0;
+  _opinionPrev.a = { me: '', other: '' }; _opinionPrev.b = { me: '', other: '' };
   for (const side of ["a", "b"]) {
     _sideStats[side] = { tags: {}, confValues: [], turnCount: 0, emotion: null };
-    const meBody = document.querySelector(`#side-${side}-self .thoughts-pane-body`);
-    const otBody = document.querySelector(`#side-${side}-other .thoughts-pane-body`);
-    const trace = document.getElementById(`side-${side}-trace`);
-    const stats = document.getElementById(`side-${side}-stats`);
-    if (meBody) meBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
-    if (otBody) otBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
-    if (trace) trace.innerHTML = `<div class="side-panel-empty">no turns yet</div>`;
-    if (stats) stats.innerHTML = `<div class="side-panel-empty">no data yet</div>`;
+    const isHuman = document.getElementById(`${side}-human`)?.checked;
+    const panel = document.getElementById(`side-${side}`);
+    const tabBar = panel?.querySelector('.side-panel-tabs');
+    const body = panel?.querySelector('.side-panel-body');
+    if (isHuman) {
+      if (tabBar) tabBar.hidden = true;
+      if (body) body.innerHTML = `<div class="side-panel-empty" style="padding:2rem 1rem;">human participant</div>`;
+    } else {
+      if (tabBar) tabBar.hidden = false;
+      const meBody = document.querySelector(`#side-${side}-self .thoughts-pane-body`);
+      const otBody = document.querySelector(`#side-${side}-other .thoughts-pane-body`);
+      const trace = document.getElementById(`side-${side}-trace`);
+      const stats = document.getElementById(`side-${side}-stats`);
+      if (meBody) meBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
+      if (otBody) otBody.innerHTML = `<div class="side-panel-empty">no notes yet</div>`;
+      if (trace) trace.innerHTML = `<div class="side-panel-empty">no turns yet</div>`;
+      if (stats) stats.innerHTML = `<div class="side-panel-empty">no data yet</div>`;
+    }
   }
 }
 
@@ -1502,9 +1572,11 @@ function createTurnBubble(side, name, num, turnIdx = null) {
 // when the model deviates.
 function parseThoughts(text) {
   if (!text || !text.trim()) return { me: "", other: "" };
-  const src = text.trim();
+  // Strip <think>...</think> blocks (Qwen3 and similar reasoning models).
+  const src = text.trim().replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
-  const headerRe = /(^|\n)\s*ABOUT\s+(.+?)\s*:\s*/gi;
+  // Match headings: ABOUT ME:  **ABOUT ME:**  ## ABOUT ME:  etc.
+  const headerRe = /(^|\n)\s*(?:\*{1,2}|#{1,3})?\s*ABOUT\s+(.+?)\s*(?:\*{1,2})?\s*:\s*/gi;
   const matches = [];
   let m;
   while ((m = headerRe.exec(src)) !== null) {
@@ -1539,6 +1611,119 @@ function parseThoughts(text) {
     }
   }
   return result;
+}
+
+async function generateOpinion(side, speakerName, otherName) {
+  if (!document.getElementById(`${side}-generate-opinion`)?.checked) return;
+  const conn = getStudioConnection();
+  if (!conn?.baseUrl || !conn?.model) return;
+
+  _opinionState = 'running';
+
+  const windowSize = parseInt(document.getElementById(`${side}-opinion-window`)?.value, 10) || 8;
+  // Only include turns whose bubble has been revealed — skip anything still blurred by TTS.
+  const allTurns = [...document.querySelectorAll('#conversation .turn')];
+  const revealedTurns = allTurns.filter(t => !t.querySelector('.turn-bubble.bubble-blurred')).slice(-windowSize);
+  const history = revealedTurns.map(t => {
+    const name = t.querySelector('.turn-label-name')?.textContent?.trim() || '';
+    const text = t.querySelector('.turn-bubble')?.textContent?.replace(/▌/g, '').trim() || '';
+    return name && text ? `${name}: ${text}` : null;
+  }).filter(Boolean).join('\n\n');
+
+  if (!history) {
+    _opinionState = 'done';
+    _fireOpinionCallback();
+    return;
+  }
+
+  // Extract character context from the loaded registry.
+  let charContext = '';
+  try {
+    const regRaw = document.getElementById(`${side}-registry`)?.value?.trim();
+    if (regRaw) {
+      const regObj = JSON.parse(regRaw);
+      const reg = regObj.registry || regObj;
+      const state = participantState[side] || reg.default_state || {};
+      const parts = [];
+      const personaSelected = state.personas?.selected;
+      const personaCtx = reg.personas?.items?.find(i => i.id === personaSelected)?.context;
+      if (personaCtx) parts.push(personaCtx.trim());
+      const sentSelected = state.sentiment?.selected;
+      const sentCtx = reg.sentiment?.items?.find(i => i.id === sentSelected)?.context;
+      if (sentCtx) parts.push(sentCtx.trim());
+      if (parts.length) charContext = `Character: ${parts.join(' ')}\n\n`;
+    }
+  } catch (_) {}
+
+  const otherUpper = (otherName || 'OTHER').toUpperCase();
+  const genCount = _opinionGenCount[side];
+  let prompt;
+
+  if (genCount === 0) {
+    // First generation: full character context, cold start.
+    // Store only the first sentence as a compact permanent anchor for future turns.
+    const firstSentence = charContext.replace(/^Character:\s*/i, '').split(/(?<=[.!?])\s+/)[0] || charContext;
+    _opinionPermContext[side] = firstSentence ? `Character: ${firstSentence.trim()}\n\n` : '';
+    prompt = `${charContext}Based on the conversation below, write a brief internal snapshot of ${speakerName}. Short phrases only — no prose, no drama, under 12 words per bullet.\n\nABOUT ME:\nWhat ${speakerName} wants, feels, and is trying to do right now. 3 bullets.\n\nABOUT ${otherUpper}:\nWhat ${speakerName} observes and thinks about ${otherName || 'the other person'} based only on what they have actually said or done. If they have said very little, reflect that uncertainty. 3 bullets.\n\nPlain text only.\n\nConversation:\n${history}`;
+  } else {
+    // Subsequent generations: permanent context + stored previous bullets + recent turns.
+    const perm = _opinionPermContext[side] || '';
+    const prev = _opinionPrev[side];
+    const existing = [
+      prev.me    ? `ABOUT ME:\n${prev.me}`          : '',
+      prev.other ? `ABOUT ${otherUpper}:\n${prev.other}` : '',
+    ].filter(Boolean).join('\n\n');
+    prompt = `${perm}Current internal state of ${speakerName}:\n${existing}\n\nUpdate the bullets below based on what has changed or developed in the conversation. Keep bullets that are still true. Replace or add ones that reflect new developments. Under 12 words each.\n\nABOUT ME:\n3 bullets.\n\nABOUT ${otherUpper}:\n3 bullets — based only on what ${otherName || 'the other person'} has actually said or done.\n\nPlain text only.\n\nRecent conversation:\n${history}`;
+  }
+  _opinionGenCount[side]++;
+
+  const isOpenAI = conn.chatPath?.includes('/v1/') || conn.payloadShape === 'openai';
+  const chatUrl = conn.baseUrl.replace(/\/$/, '') + (conn.chatPath || '/api/chat');
+  const messages = [{ role: 'user', content: prompt }];
+  const body = isOpenAI
+    ? { model: conn.model, messages, stream: false, max_tokens: 250 }
+    : { model: conn.model, messages, stream: false, options: { num_predict: 250 } };
+
+  try {
+    const resp = await fetch(chatUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const text = data.choices?.[0]?.message?.content || data.message?.content || '';
+    if (!text) return;
+
+    const thoughts = parseThoughts(text);
+    const selfEl  = document.getElementById(`side-${side}-self`);
+    const otherEl = document.getElementById(`side-${side}-other`);
+    const meBody    = selfEl?.querySelector('.thoughts-pane-body');
+    const otherBody = otherEl?.querySelector('.thoughts-pane-body');
+    if (meBody && thoughts.me)       meBody.innerHTML    = renderMd(thoughts.me);
+    if (otherBody && thoughts.other) otherBody.innerHTML = renderMd(thoughts.other);
+    if (thoughts.me)    _opinionPrev[side].me    = thoughts.me;
+    if (thoughts.other) _opinionPrev[side].other = thoughts.other;
+  } catch (_) {}
+  finally {
+    // Write prompt to Trace after renderSidePanel has finished building it.
+    const traceEl = document.getElementById(`side-${side}-trace`);
+    if (traceEl) {
+      const existing = traceEl.querySelector('.opinion-prompt-section');
+      if (existing) existing.remove();
+      const sec = document.createElement('details');
+      sec.className = 'side-section opinion-prompt-section';
+      sec.innerHTML = `<summary>Opinion prompt</summary><div class="side-section-body"><textarea class="opinion-prompt-ta" readonly rows="8">${escapeHtml(prompt)}</textarea></div>`;
+      traceEl.prepend(sec);
+    }
+    _opinionState = 'done';
+    _fireOpinionCallback();
+  }
+}
+
+function _fireOpinionCallback() {
+  if (_opinionDoneCallback) {
+    const cb = _opinionDoneCallback;
+    _opinionDoneCallback = null;
+    _opinionState = 'idle';
+    cb();
+  }
 }
 
 function renderSidePanel(side, speakerName, trace, postGen = null) {
@@ -1585,6 +1770,9 @@ function renderSidePanel(side, speakerName, trace, postGen = null) {
       otherBody.innerHTML = `<div class="side-panel-empty">${msg}</div>`;
     }
   }
+
+  // ── Opinion generation (memory disabled, LLM-driven thoughts) ───
+  if (!MEMORY_ENABLED) generateOpinion(side, speakerName, otherName);
 
   // ── Tab 2: Trace (classifier, chunks, system prompts) ────
   if (traceEl) {
@@ -1765,7 +1953,7 @@ function showDone() {
   div.textContent = "— conversation complete —";
   conv.appendChild(div);
   scrollToBottom();
-  if (_runTraceLog.length) {
+  if (_runTraceLog.length && MEMORY_ENABLED) {
     renderRunAnalytics(_runTraceLog, _runNames);
     const btn = document.getElementById("btn-analytics");
     if (btn) btn.hidden = false;
@@ -2388,6 +2576,7 @@ window.addEventListener("load", () => {
   if (typeof speechSynthesis !== "undefined") {
     speechSynthesis.onvoiceschanged = loadVoices;
   }
+  applyGlobalMemoryFlag();
   loadParticipantSettings();
   bindSettingsAutosave();
   document.getElementById("a-human")?.addEventListener("change", () => { syncHumanUI(); syncMemoryUI(); syncTtsUI(); });

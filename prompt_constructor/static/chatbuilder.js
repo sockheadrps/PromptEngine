@@ -2,6 +2,8 @@
 
 'use strict';
 
+const MEMORY_ENABLED = localStorage.getItem('promptlibretto.memory-enabled.v1') === 'true';
+
 // ── state ──────────────────────────────────────────────────────────────────
 
 let draftId       = null;
@@ -31,7 +33,8 @@ let currentDetailSection = null; // section currently open in the detail panel
 const SECTION_KEYS = [
   'base_context', 'personas', 'sentiment',
   'static_injections', 'runtime_injections', 'output_prompt_directions',
-  'memory_recall', 'user_message', 'prompt_endings',
+  ...(MEMORY_ENABLED ? ['memory_recall'] : []),
+  'user_message', 'prompt_endings',
 ];
 
 const SECTION_LABELS = {
@@ -892,13 +895,14 @@ function renderExtras() {
   const op = regState.output_policy;
   for (const [k, v] of Object.entries(op)) addPill(k, v);
 
-  const mc = regState.memory_config;
-  if (mc.emotional_state_enabled) addPill('emotion', '✓');
-  if (mc.working_notes_enabled)   addPill('notes', '✓');
-  if (mc.classifier_model)        addPill('clf', mc.classifier_model);
-
-  const rules = regState.memory_rules;
-  if (rules.length) addPill('rules', rules.length);
+  if (MEMORY_ENABLED) {
+    const mc = regState.memory_config;
+    if (mc.emotional_state_enabled) addPill('emotion', '✓');
+    if (mc.working_notes_enabled)   addPill('notes', '✓');
+    if (mc.classifier_model)        addPill('clf', mc.classifier_model);
+    const rules = regState.memory_rules;
+    if (rules.length) addPill('rules', rules.length);
+  }
 
   const sb = regState.style_blend;
   for (const [sec, cfg] of Object.entries(sb)) {

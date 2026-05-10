@@ -1,3 +1,5 @@
+const MEMORY_ENABLED = localStorage.getItem('promptlibretto.memory-enabled.v1') === 'true';
+
 // promptlibretto studio — registry client.
 //
 // Reads/writes the registry JSON entirely client-side: import a registry,
@@ -1223,6 +1225,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     if (tuningEmptyEl) tuningEmptyEl.hidden = true;
 
     for (const key of sectionKeys()) {
+      if (key === 'memory_recall' && !MEMORY_ENABLED) continue;
       const sec = registry[key];
       const label = SECTION_LABELS[key] || key;
       const hasItems = (sec.items || []).length > 0;
@@ -2345,7 +2348,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     const resetBtn         = $("memory-reset-btn");
     const memCfgFieldset   = $("memory-config-fieldset");
     const infoPanelEl      = $("memory-info-panel");
-    const active           = hasMemoryRules();
+    const active           = MEMORY_ENABLED && hasMemoryRules();
 
     if (memPipeline)    memPipeline.hidden    = !active;
     if (normalOutput)   normalOutput.hidden   =  active;
@@ -2793,7 +2796,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       if (missingTvars.length) return;
 
       // — Memory pipeline path —
-      if (hasMemoryRules()) {
+      if (MEMORY_ENABLED && hasMemoryRules()) {
         const userInputKey = Object.keys(tvarValues).find(k => k.endsWith("::user_input"));
         const userInput = userInputKey ? (tvarValues[userInputKey] || "").trim() : "";
 

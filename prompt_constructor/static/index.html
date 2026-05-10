@@ -103,14 +103,18 @@
           <div class="section-block">
             <div class="section-head conn-tab-head">
               <span class="section-head-title">Connection Configuration</span>
+              <label class="memory-toggle-label">
+                <input type="checkbox" id="memory-enabled-toggle" />
+                <span>Enable Memory</span>
+              </label>
               <div class="conn-tabs">
                 <button type="button" class="conn-tab active" data-tab="llm">
                   LLM
                 </button>
-                <button type="button" class="conn-tab" data-tab="embed">
+                <button type="button" class="conn-tab memory-tab" data-tab="embed" hidden>
                   Embed
                 </button>
-                <button type="button" class="conn-tab" data-tab="classifier">
+                <button type="button" class="conn-tab memory-tab" data-tab="classifier" hidden>
                   Classifier
                 </button>
               </div>
@@ -140,7 +144,6 @@
                 <label
                   >Payload shape
                   <select id="conn-shape">
-                    <option value="auto">auto</option>
                     <option value="ollama">ollama</option>
                     <option value="openai">openai</option>
                   </select>
@@ -207,6 +210,7 @@ ollama serve</pre>
             <!-- ── Embed model ────────────────────────────────── -->
             <div class="conn-tab-panel" id="conn-tab-embed" hidden>
               <div class="conn-form">
+                <div class="conn-form-row">
                 <label
                   >Base URL
                   <input
@@ -215,6 +219,15 @@ ollama serve</pre>
                     placeholder="http://localhost:11434"
                   />
                 </label>
+                <label
+                  >Embed path
+                  <input
+                    type="text"
+                    id="embed-path"
+                    placeholder="/api/embed"
+                  />
+                </label>
+                </div>
                 <label
                   >Model
                   <div class="conn-model-row">

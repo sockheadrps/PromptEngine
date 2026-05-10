@@ -210,10 +210,12 @@ button { font-family: inherit; cursor: pointer; }
 .setup-bar {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1px;
-  background: var(--border);
   border-bottom: 1px solid var(--border);
   animation: fadeSlideUp 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+#card-a {
+  border-right: 1px solid var(--border);
 }
 
 .pcard {
@@ -417,15 +419,17 @@ textarea {
 .btn-view-store:hover { color: var(--accent); border-color: rgba(201, 139, 64, 0.35); }
 .btn-view-store + .btn-reset-store { margin-left: 0; }
 
-/* ── collapsible tuning / json ─────────────────────────── */
+/* ── collapsible tuning / json / tvars ──────────────────── */
 
 .pcard-tuning,
-.pcard-json {
+.pcard-json,
+.pcard-tvars-detail {
   font-size: 11px;
   margin-top: 2px;
 }
 .pcard-tuning > summary,
-.pcard-json > summary {
+.pcard-json > summary,
+.pcard-tvars-detail > summary {
   cursor: pointer;
   list-style: none;
   color: var(--muted);
@@ -440,7 +444,8 @@ textarea {
   letter-spacing: 0.04em;
 }
 .pcard-tuning > summary::before,
-.pcard-json > summary::before {
+.pcard-json > summary::before,
+.pcard-tvars-detail > summary::before {
   content: '▶';
   font-size: 8px;
   color: var(--muted-soft);
@@ -448,11 +453,14 @@ textarea {
   flex-shrink: 0;
 }
 .pcard-tuning[open] > summary::before,
-.pcard-json[open] > summary::before { transform: rotate(90deg); }
+.pcard-json[open] > summary::before,
+.pcard-tvars-detail[open] > summary::before { transform: rotate(90deg); }
 .pcard-tuning > summary::-webkit-details-marker,
-.pcard-json > summary::-webkit-details-marker { display: none; }
+.pcard-json > summary::-webkit-details-marker,
+.pcard-tvars-detail > summary::-webkit-details-marker { display: none; }
 .pcard-tuning > summary:hover,
-.pcard-json > summary:hover { color: var(--dim); }
+.pcard-json > summary:hover,
+.pcard-tvars-detail > summary:hover { color: var(--dim); }
 
 .pcard-json[open] textarea { margin-top: 5px; }
 
@@ -489,7 +497,35 @@ textarea {
   min-height: 56px;
 }
 
-.pcard-tvars { }
+
+.pcard-tvars-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+.pcard-tvar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pcard-tvar-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard-tvar-sec {
+  color: var(--muted-soft);
+}
+.pcard-tvar-input {
+  width: 100%;
+}
 
 .muted { color: var(--muted); }
 .small { font-size: 10px; }
@@ -731,6 +767,19 @@ textarea {
   padding: 8px 10px;
   font-size: 12px;
   line-height: 1.5;
+}
+.opinion-prompt-ta {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 6px 8px;
+  resize: vertical;
 }
 .side-section-body pre {
   font-family: var(--mono);
@@ -1410,6 +1459,31 @@ textarea {
 
 /* ── hide memory-specific panels when memory is off ─────── */
 .pcard.is-no-memory .memory-only { display: none !important; }
+
+/* ── global memory disabled (workspace toggle) ───────────── */
+body.memory-globally-disabled .memory-feature,
+body.memory-globally-disabled .memory-only { display: none !important; }
+
+/* opinion toggle: only visible when memory is globally disabled */
+.opinion-only { display: none !important; }
+body.memory-globally-disabled .opinion-only { display: flex !important; }
+
+.opinion-window-label {
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.opinion-window-input {
+  width: 3em;
+  padding: 1px 4px;
+  font-size: 12px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--panel2);
+  color: var(--text);
+}
 
 /* ── hide TTS voice/speed when TTS is off ───────────────── */
 .pcard.is-no-tts .tts-detail { display: none !important; }

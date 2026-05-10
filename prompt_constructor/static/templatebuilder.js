@@ -1,3 +1,5 @@
+const MEMORY_ENABLED = localStorage.getItem('promptlibretto.memory-enabled.v1') === 'true';
+
 const SECTION_KEYS = [
   "base_context",
   "personas",
@@ -1565,6 +1567,7 @@ function _onMetaInput() {
   const t = document.getElementById("model-title-input")?.value?.trim();
   const d = document.getElementById("model-desc-input")?.value?.trim();
   if (t && d) {
+    if (!MEMORY_ENABLED) { setMemoryChoice(false); return; }
     _setupPhase = "memory-choice";
     const card = document.getElementById("builder-setup-card");
     if (card) card.hidden = false;
@@ -1636,7 +1639,7 @@ function completeSetup() {
 
 function _bypassSetup() {
   _setupPhase = "ready";
-  _useMemory = !!(registryState.memory_config && Object.keys(registryState.memory_config).length > 0);
+  _useMemory = MEMORY_ENABLED && !!(registryState.memory_config && Object.keys(registryState.memory_config).length > 0);
   const card = document.getElementById("builder-setup-card");
   if (card) card.hidden = true;
   const banner = document.getElementById("setup-phase-banner");

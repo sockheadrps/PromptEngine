@@ -1,6 +1,28 @@
 import { getWorkspaceId, setWorkspaceId } from "/static/session.js";
 import { listModels } from "/static/ollama_client.js";
 
+// ── Memory toggle ────────────────────────────────────────────
+const MEMORY_ENABLED_KEY = 'promptlibretto.memory-enabled.v1';
+const memoryToggle = document.getElementById('memory-enabled-toggle');
+
+function applyMemoryToggle(enabled) {
+  document.querySelectorAll('.memory-tab').forEach(btn => { btn.hidden = !enabled; });
+  if (!enabled) {
+    const active = document.querySelector('.conn-tab.active');
+    if (active && (active.dataset.tab === 'embed' || active.dataset.tab === 'classifier')) {
+      document.querySelector('.conn-tab[data-tab="llm"]').click();
+    }
+  }
+}
+
+memoryToggle.checked = localStorage.getItem(MEMORY_ENABLED_KEY) === 'true';
+applyMemoryToggle(memoryToggle.checked);
+
+memoryToggle.addEventListener('change', () => {
+  localStorage.setItem(MEMORY_ENABLED_KEY, memoryToggle.checked);
+  applyMemoryToggle(memoryToggle.checked);
+});
+
 // ── Tab switching ────────────────────────────────────────────
 document.querySelectorAll('.conn-tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -128,10 +150,18 @@ const elShape  = document.getElementById("conn-shape");
 const elModel  = document.getElementById("conn-model");
 const elStatus = document.getElementById("conn-status");
 
+const SHAPE_PATHS = { ollama: "/v1/chat/completions", openai: "/v1/chat/completions" };
+
 const stored = loadJson(STORAGE_KEY);
 elUrl.value   = stored.baseUrl   || "http://localhost:11434";
-elPath.value  = stored.chatPath  || "/api/chat";
-elShape.value = stored.payloadShape || "auto";
+elPath.value  = stored.chatPath  || "/v1/chat/completions";
+elShape.value = (stored.payloadShape && stored.payloadShape !== "auto") ? stored.payloadShape : "ollama";
+
+elShape.addEventListener("change", () => {
+  if (!elPath.value.trim() || Object.values(SHAPE_PATHS).includes(elPath.value.trim())) {
+    elPath.value = SHAPE_PATHS[elShape.value] || "/v1/chat/completions";
+  }
+});
 
 function setStatus(el, msg, kind) {
   el.textContent = msg;
@@ -160,8 +190,8 @@ else populateModels([], "");
 let testSeq = 0;
 async function doTest(manual = true) {
   const baseUrl = elUrl.value.trim() || "http://localhost:11434";
-  const chatPath = elPath.value.trim() || "/api/chat";
-  const payloadShape = elShape.value || "auto";
+  const chatPath = elPath.value.trim() || "/v1/chat/completions";
+  const payloadShape = elShape.value || "ollama";
   if (!/^https?:\/\//.test(baseUrl)) {
     if (manual) setStatus(elStatus, "Enter a full URL (http://host:port).", "warn");
     return;
@@ -208,7 +238,7 @@ let debounce;
   clearTimeout(debounce);
   debounce = setTimeout(() => doTest(false), 400);
 }));
-elShape.addEventListener("change", () => doTest(false));
+elShape.addEventListener("change", () => { doTest(false); });
 
 document.getElementById("conn-save-btn").addEventListener("click", () => {
   const model = elModel.value;
@@ -223,15 +253,17 @@ document.getElementById("conn-save-btn").addEventListener("click", () => {
   setTimeout(() => { elStatus.textContent = ""; elStatus.dataset.kind = ""; }, 2000);
 });
 
-if (stored.baseUrl) doTest(false);
+doTest(false);
 
 // ── Embed model ──────────────────────────────────────────────
 const embedStored = loadJson(EMBED_KEY);
 const elEmbedUrl   = document.getElementById("embed-base-url");
+const elEmbedPath  = document.getElementById("embed-path");
 const elEmbedModel = document.getElementById("embed-model");
 const elEmbedSt    = document.getElementById("embed-status");
 
-elEmbedUrl.value = embedStored.baseUrl || "";
+elEmbedUrl.value  = embedStored.baseUrl  || "";
+elEmbedPath.value = embedStored.embedPath || "/api/embed";
 
 function populateEmbedModels(names, selected) {
   elEmbedModel.innerHTML = "";
@@ -286,8 +318,9 @@ elEmbedUrl.addEventListener("input", () => {
 
 async function testEmbedDirect(baseUrl, model, statusEl) {
   const base = baseUrl.replace(/\/$/, "");
+  const configuredPath = elEmbedPath?.value?.trim() || "/api/embed";
   const attempts = [
-    [base + "/api/embed",      { model, input: "test" }],
+    [base + configuredPath,    { model, input: "test" }],
     [base + "/api/embeddings", { model, prompt: "test" }],
     [base + "/v1/embeddings",  { model, input: "test" }],
   ];
@@ -332,6 +365,7 @@ document.getElementById("embed-test-btn").addEventListener("click", testEmbed);
 document.getElementById("embed-save-btn").addEventListener("click", () => {
   saveJson(EMBED_KEY, {
     baseUrl: elEmbedUrl.value.trim(),
+    embedPath: elEmbedPath.value.trim() || "/api/embed",
     model: elEmbedModel.value,
   });
   setStatus(elEmbedSt, "Saved.", "ok");

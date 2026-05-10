@@ -37,7 +37,7 @@
         "template_vars": {
           "company_name": "Arcane Fulfillment Support",
           "emotional_state": "",
-          "working_notes": ""
+          "working_notes": "New call just connected. Greet the customer and ask how you can help."
         }
       },
       "output_prompt_directions": { "selected": "rules" },
@@ -154,11 +154,11 @@
     },
     "base_context": {
       "required": true,
-      "template_vars": ["company_name", "emotional_state", "working_notes"],
+      "template_vars": ["name", "company_name", "emotional_state", "working_notes"],
       "items": [
         {
           "name": "scene",
-          "text": "You work for {company_name}, a helpdesk for magical orders, cursed deliveries, spellbook licensing, and post-purchase enchantment defects.\n\n{emotional_state}\n\nCall notes:\n{working_notes}"
+          "text": "Your name is {name}. You work for {company_name}, a helpdesk for magical orders, cursed deliveries, spellbook licensing, and post-purchase enchantment defects.\n\n{emotional_state}\n\nCall notes:\n{working_notes}"
         }
       ]
     },

@@ -19,6 +19,7 @@
       <a href="/builder" class="header-page-link">Builder</a>
       <a href="/studio" class="header-page-link">Studio</a>
       <span class="header-page-link active">Ensemble</span>
+      <a href="/assistant" class="header-page-link">Assistant</a>
     </nav>
   </div>
   <div class="header-controls">
@@ -59,11 +60,13 @@
           </label>
         </div>
         <div class="pcard-row pcard-toggles">
-          <label class="inline-toggle model-only"><input type="checkbox" id="a-memory" checked /><span>Memory pipeline</span></label>
-          <span class="pcard-sep"></span>
-          <button type="button" class="btn-view-store model-only" onclick="viewStore('a')">View memory</button>
-          <button type="button" class="btn-reset-store model-only" onclick="resetStore('a')">Reset memory</button>
           <button type="button" class="btn-view-store model-only" onclick="viewPrompt('a')">View prompt</button>
+          <span class="pcard-sep"></span>
+          <label class="inline-toggle model-only memory-feature"><input type="checkbox" id="a-memory" checked /><span>Memory pipeline</span></label>
+          <label class="inline-toggle model-only opinion-only"><input type="checkbox" id="a-generate-opinion" /><span>Generate Opinion</span></label>
+          <label class="opinion-only opinion-window-label model-only"><span>last</span><input type="number" id="a-opinion-window" class="opinion-window-input" value="8" min="1" max="50" /><span>turns</span></label>
+          <button type="button" class="btn-view-store model-only memory-feature" onclick="viewStore('a')">View memory</button>
+          <button type="button" class="btn-reset-store model-only memory-feature" onclick="resetStore('a')">Reset memory</button>
         </div>
         <div class="pcard-row pcard-tts-row">
           <label class="inline-toggle"><input type="checkbox" id="a-tts" /><span>Speak responses (TTS)</span></label>
@@ -164,11 +167,13 @@
           </label>
         </div>
         <div class="pcard-row pcard-toggles">
-          <label class="inline-toggle model-only"><input type="checkbox" id="b-memory" checked /><span>Memory pipeline</span></label>
-          <span class="pcard-sep"></span>
-          <button type="button" class="btn-view-store model-only" onclick="viewStore('b')">View memory</button>
-          <button type="button" class="btn-reset-store model-only" onclick="resetStore('b')">Reset memory</button>
           <button type="button" class="btn-view-store model-only" onclick="viewPrompt('b')">View prompt</button>
+          <span class="pcard-sep"></span>
+          <label class="inline-toggle model-only memory-feature"><input type="checkbox" id="b-memory" checked /><span>Memory pipeline</span></label>
+          <label class="inline-toggle model-only opinion-only"><input type="checkbox" id="b-generate-opinion" /><span>Generate Opinion</span></label>
+          <label class="opinion-only opinion-window-label model-only"><span>last</span><input type="number" id="b-opinion-window" class="opinion-window-input" value="8" min="1" max="50" /><span>turns</span></label>
+          <button type="button" class="btn-view-store model-only memory-feature" onclick="viewStore('b')">View memory</button>
+          <button type="button" class="btn-reset-store model-only memory-feature" onclick="resetStore('b')">Reset memory</button>
         </div>
         <div class="pcard-row pcard-tts-row">
           <label class="inline-toggle"><input type="checkbox" id="b-tts" /><span>Speak responses (TTS)</span></label>
@@ -254,7 +259,7 @@
       <div class="side-panel-tabs" role="tablist">
         <button type="button" class="side-tab active" data-tab="thoughts" data-side="a">Thoughts</button>
         <button type="button" class="side-tab" data-tab="trace" data-side="a">Trace</button>
-        <button type="button" class="side-tab" data-tab="stats" data-side="a">Stats</button>
+        <button type="button" class="side-tab memory-feature" data-tab="stats" data-side="a">Stats</button>
       </div>
       <div class="side-panel-body" id="side-a-body" data-active-tab="thoughts">
         <div class="side-tab-pane" data-tab="thoughts">
@@ -270,7 +275,7 @@
         <div class="side-tab-pane" data-tab="trace" hidden>
           <div id="side-a-trace"><div class="side-panel-empty">no turns yet</div></div>
         </div>
-        <div class="side-tab-pane" data-tab="stats" hidden>
+        <div class="side-tab-pane memory-feature" data-tab="stats" hidden>
           <div id="side-a-stats"><div class="side-panel-empty">no data yet</div></div>
         </div>
       </div>
@@ -292,7 +297,7 @@
       <div class="side-panel-tabs" role="tablist">
         <button type="button" class="side-tab active" data-tab="thoughts" data-side="b">Thoughts</button>
         <button type="button" class="side-tab" data-tab="trace" data-side="b">Trace</button>
-        <button type="button" class="side-tab" data-tab="stats" data-side="b">Stats</button>
+        <button type="button" class="side-tab memory-feature" data-tab="stats" data-side="b">Stats</button>
       </div>
       <div class="side-panel-body" id="side-b-body" data-active-tab="thoughts">
         <div class="side-tab-pane" data-tab="thoughts">
@@ -308,7 +313,7 @@
         <div class="side-tab-pane" data-tab="trace" hidden>
           <div id="side-b-trace"><div class="side-panel-empty">no turns yet</div></div>
         </div>
-        <div class="side-tab-pane" data-tab="stats" hidden>
+        <div class="side-tab-pane memory-feature" data-tab="stats" hidden>
           <div id="side-b-stats"><div class="side-panel-empty">no data yet</div></div>
         </div>
       </div>
