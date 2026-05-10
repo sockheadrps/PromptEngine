@@ -50,6 +50,30 @@ const SECTION_LABELS = {
   prompt_endings:             'Prompt Endings',
 };
 
+const ASSEMBLY_TOKEN_ALIASES = {
+  base_context: 'base_context.text',
+  personas: 'personas.context',
+  sentiment: 'sentiment.context',
+  static_injections: 'static_injections.text',
+  runtime_injections: 'runtime_injections.text',
+  output_prompt_directions: 'output_prompt_directions.text',
+  memory_recall: 'memory_recall.text',
+  prompt_endings: 'prompt_endings.endings',
+};
+
+const GENERATION_KEYS = new Set([
+  'max_prompt_chars',
+  'max_tokens',
+  'model',
+  'provider',
+  'repeat_penalty',
+  'retries',
+  'temperature',
+  'timeout_ms',
+  'top_k',
+  'top_p',
+]);
+
 // ── init ───────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -193,7 +217,7 @@ async function runBrowserDelegatedChat(cfg, thinkingEl) {
   let assistantText = '';
   let assistantEl = null;
 
-  for (let step = 0; step < 12; step++) {
+  for (let step = 0; step < 32; step++) {
     const data = await callLocalBuilderModel(url, cfg, localMessages, session.tools, openaiShape);
     removeEl(thinkingEl);
 
@@ -236,7 +260,7 @@ async function runBrowserDelegatedChat(cfg, thinkingEl) {
     }
   }
 
-  addErrorBubble('The builder stopped after too many tool-call rounds. Try asking it to summarize or export.');
+  addErrorBubble('The builder hit the tool-call round limit after applying the visible changes. Ask it to continue, summarize, validate, or export.');
 }
 
 async function ensureBuilderSession() {
@@ -280,9 +304,88 @@ async function callLocalBuilderModel(url, cfg, messages, tools, openaiShape) {
   });
   if (!resp.ok) {
     const body = await resp.text().catch(() => '');
+    if (isNativeToolParseFailure(resp.status, body)) {
+      return callLocalBuilderModelJsonFallback(url, cfg, messages, tools, openaiShape);
+    }
     throw new Error(`LLM ${resp.status}: ${body.slice(0, 240)}`);
   }
   return resp.json();
+}
+
+async function callLocalBuilderModelJsonFallback(url, cfg, messages, tools, openaiShape) {
+  const toolNames = tools
+    .map(t => t?.function?.name)
+    .filter(Boolean)
+    .join(', ');
+  const fallbackMessages = [
+    ...messages,
+    {
+      role: 'system',
+      content:
+        'Native tool calling failed. Return ONLY valid JSON, no markdown. ' +
+        'Shape: {"tool_calls":[{"name":"tool.name","arguments":{}}],"content":""}. ' +
+        'Use these tool names only: ' + toolNames,
+    },
+  ];
+  const payload = openaiShape
+    ? {
+        model: cfg.model,
+        messages: fallbackMessages,
+        stream: false,
+        temperature: 0.2,
+        max_tokens: 1024,
+      }
+    : {
+        model: cfg.model,
+        messages: fallbackMessages,
+        stream: false,
+        options: { temperature: 0.2, num_predict: 1024 },
+      };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`LLM ${resp.status}: ${body.slice(0, 240)}`);
+  }
+
+  const data = await resp.json();
+  const msg = extractAssistantMessage(data);
+  const parsed = parseJsonCommandMessage(msg.content || '');
+  const toolCalls = (parsed.tool_calls || parsed.tools || []).map((tc, idx) => ({
+    id: tc.id || `json_call_${idx}`,
+    type: 'function',
+    function: {
+      name: tc.name || tc.tool || tc.function?.name || '',
+      arguments: JSON.stringify(tc.arguments || tc.args || tc.function?.arguments || {}),
+    },
+  })).filter(tc => tc.function.name);
+
+  return openaiShape
+    ? { choices: [{ message: { role: 'assistant', content: parsed.content || '', tool_calls: toolCalls } }] }
+    : { message: { role: 'assistant', content: parsed.content || '', tool_calls: toolCalls } };
+}
+
+function isNativeToolParseFailure(status, body) {
+  return status >= 400 && /tool call arguments|parse tool call|parse_error/i.test(body || '');
+}
+
+function parseJsonCommandMessage(text) {
+  const trimmed = String(text || '').trim();
+  try { return JSON.parse(trimmed); } catch {}
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch {}
+  }
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(trimmed.slice(start, end + 1)); } catch {}
+  }
+  return { content: trimmed, tool_calls: [] };
 }
 
 function extractAssistantMessage(data) {
@@ -411,14 +514,14 @@ function applyToolCall(name, args, result) {
 
     case 'registry.assembly.set_order':
       if (result.assembly_order) {
-        regState.assembly = result.assembly_order;
+        regState.assembly = normalizeAssemblyOrder(result.assembly_order);
         renderAssemblyOrder();
       }
       break;
 
     case 'registry.generation.set':
       if (result.generation) {
-        Object.assign(regState.generation, result.generation);
+        Object.assign(regState.generation, sanitizeGeneration(result.generation));
         renderExtras();
       }
       break;
@@ -788,6 +891,24 @@ function setSlider(sectionKey, itemId, value, valEl) {
   if (valEl) valEl.textContent = value;
 }
 
+function normalizeAssemblyOrder(order) {
+  return (order || []).map(token => ASSEMBLY_TOKEN_ALIASES[token] || token);
+}
+
+function sanitizeGeneration(generation) {
+  const clean = {};
+  for (const [key, val] of Object.entries(generation || {})) {
+    if (GENERATION_KEYS.has(key)) clean[key] = val;
+  }
+  return clean;
+}
+
+function validSelectedForSection(sectionKey, selected) {
+  const items = regState.sections[sectionKey]?.items || [];
+  if (selected && items.some(item => (item.id || item.name) === selected)) return selected;
+  return items[0] ? (items[0].id || items[0].name || null) : null;
+}
+
 // ── item rendering ─────────────────────────────────────────────────────────
 
 function _buildItemEl(sectionKey, item) {
@@ -1136,7 +1257,8 @@ function _buildStateBlock() {
     const st = draftState[sec];
     const entry = {};
     if (st) {
-      if (st.selected !== null && st.selected !== undefined) entry.selected = st.selected;
+      const selected = validSelectedForSection(sec, st.selected);
+      if (selected !== null && selected !== undefined) entry.selected = selected;
       if (st.slider !== null && st.slider !== undefined) entry.slider = st.slider;
       if (st.array_modes && Object.keys(st.array_modes).length) {
         entry.array_modes = {};
@@ -1162,13 +1284,13 @@ function _buildClientRegistry(serverRegistry) {
     version: 2,
     title: regState.title || serverRegistry?.title || '',
     description: regState.description || serverRegistry?.description || '',
-    assembly_order: regState.assembly.length ? regState.assembly : (serverRegistry?.assembly_order || []),
+    assembly_order: normalizeAssemblyOrder(regState.assembly.length ? regState.assembly : (serverRegistry?.assembly_order || [])),
   };
 
   // Include generation/output_policy/memory_config/memory_rules/style_blend from regState first,
   // falling back to server data.
-  if (Object.keys(regState.generation).length) reg.generation = regState.generation;
-  else if (serverRegistry?.generation && Object.keys(serverRegistry.generation).length) reg.generation = serverRegistry.generation;
+  if (Object.keys(regState.generation).length) reg.generation = sanitizeGeneration(regState.generation);
+  else if (serverRegistry?.generation && Object.keys(serverRegistry.generation).length) reg.generation = sanitizeGeneration(serverRegistry.generation);
 
   if (Object.keys(regState.output_policy).length) reg.output_policy = regState.output_policy;
   else if (serverRegistry?.output_policy && Object.keys(serverRegistry.output_policy).length) reg.output_policy = serverRegistry.output_policy;

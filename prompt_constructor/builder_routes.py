@@ -80,9 +80,37 @@ Rules:
 - Use user_message only as an assembly_order token; do not create a user_message section.
 - Required core sections are base_context, personas, sentiment, output_prompt_directions, and prompt_endings.
 - prompt_endings item should use name "endings" and may include items ["you say:"].
+- Use assembly_order field tokens like base_context.text, personas.context, sentiment.context, output_prompt_directions.text, memory_recall.text, prompt_endings.endings. Do not use bare section names.
+- Valid generation keys only: max_prompt_chars, max_tokens, model, provider, repeat_penalty, retries, temperature, timeout_ms, top_k, top_p. Do not use presence_penalty or frequency_penalty.
 - For memory registries, add memory_recall with text "{memory_recall}", configure memory, add useful classifier rules, and include memory_recall.text in assembly_order.
+- Section field types: base_context → fields={"text": "..."}. personas/sentiment → fields={"context": "..."}. output_prompt_directions/static_injections/runtime_injections → fields={"text": "..."}. prompt_endings → fields={"name": "endings", "text": "..."}.
+- fields must contain the actual written prompt text for that section — never empty strings, never placeholders. Write real content based on what the user asked for.
 - Keep tool-call arguments compact and valid. After tool calls are applied, answer with a short summary of what was built.
 """
+
+_ASSEMBLY_TOKEN_ALIASES = {
+    "base_context": "base_context.text",
+    "personas": "personas.context",
+    "sentiment": "sentiment.context",
+    "static_injections": "static_injections.text",
+    "runtime_injections": "runtime_injections.text",
+    "output_prompt_directions": "output_prompt_directions.text",
+    "memory_recall": "memory_recall.text",
+    "prompt_endings": "prompt_endings.endings",
+}
+
+_GENERATION_KEYS = {
+    "max_prompt_chars",
+    "max_tokens",
+    "model",
+    "provider",
+    "repeat_penalty",
+    "retries",
+    "temperature",
+    "timeout_ms",
+    "top_k",
+    "top_p",
+}
 
 
 def _strip_tool_descriptions(value: Any) -> Any:
@@ -150,6 +178,16 @@ def _normalize_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
         out["policy"] = out.pop("output_policy")
     if name == "registry.memory.configure" and "memory_config" in out and "config" not in out:
         out["config"] = out.pop("memory_config")
+
+    if name == "registry.assembly.set_order" and isinstance(out.get("order"), list):
+        out["order"] = [_ASSEMBLY_TOKEN_ALIASES.get(token, token) for token in out["order"]]
+
+    if name == "registry.generation.set" and isinstance(out.get("params"), dict):
+        out["params"] = {
+            key: val
+            for key, val in out["params"].items()
+            if key in _GENERATION_KEYS
+        }
 
     if name in ("registry.classifier_rule.add", "registry.classifier_rule.update"):
         if "rule" in out and isinstance(out["rule"], dict):
@@ -288,7 +326,7 @@ _TOOLS: list[dict[str, Any]] = [
                     "item_id":     {"type": "string", "description": "Unique ID within the section"},
                     "fields":      {"type": "object", "description": "Item fields (varies by section type)"},
                 },
-                "required": ["draft_id", "section_key", "item_id"],
+                "required": ["draft_id", "section_key", "item_id", "fields"],
             },
         },
     },
