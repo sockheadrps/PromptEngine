@@ -508,6 +508,16 @@ class BuilderChatRequest(BaseModel):
     max_tokens: int = Field(default=1024, ge=1)
 
 
+class BuilderSessionRequest(BaseModel):
+    draft_id: Optional[str] = None
+
+
+class BuilderToolRequest(BaseModel):
+    name: str
+    args: dict[str, Any] = Field(default_factory=dict)
+    draft_id: Optional[str] = None
+
+
 # ── endpoint ──────────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT: Optional[str] = None
@@ -518,6 +528,34 @@ def _get_system_prompt() -> str:
     if _SYSTEM_PROMPT is None:
         _SYSTEM_PROMPT = _build_system_prompt()
     return _SYSTEM_PROMPT
+
+
+@router.post("/session")
+async def builder_session(req: BuilderSessionRequest) -> dict[str, Any]:
+    """Return prompt/tool metadata for browser-delegated builder chat."""
+    draft_id = req.draft_id
+    if not draft_id:
+        draft_id = api.draft_create()["draft_id"]
+    return {
+        "draft_id": draft_id,
+        "system_prompt": _get_system_prompt(),
+        "tools": _TOOLS,
+    }
+
+
+@router.post("/tool")
+async def builder_tool(req: BuilderToolRequest) -> dict[str, Any]:
+    """Apply one builder tool call from a browser-delegated LLM response."""
+    args = dict(req.args or {})
+    if req.draft_id and req.name != "registry.draft.create" and not args.get("draft_id"):
+        args["draft_id"] = req.draft_id
+    result = _dispatch(req.name, args)
+    return {
+        "name": req.name,
+        "args": args,
+        "result": result,
+        "draft_id": result.get("draft_id") or args.get("draft_id") or req.draft_id,
+    }
 
 
 @router.post("/chat")

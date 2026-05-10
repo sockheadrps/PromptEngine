@@ -10,6 +10,7 @@ let draftId       = null;
 let conversationHistory = [];  // [{role, content}] sent to /api/builder/chat
 let isStreaming   = false;
 let lastExportJSON = '';
+let builderSession = null;
 
 // local mirror of the registry being built, for visualization only
 const regState = {
@@ -168,95 +169,162 @@ async function runChat() {
   const thinkingEl = addThinking();
   const cfg = getConfig();
 
-  let assistantText = '';
-  let assistantEl   = null;
-
   try {
-    const resp = await fetch('/api/builder/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages:     conversationHistory,
-        model:        cfg.model,
-        base_url:     cfg.base_url,
-        chat_path:    cfg.chat_path,
-        draft_id:     draftId,
-        temperature:  0.4,
-        max_tokens:   1024,
-      }),
-    });
-
-    if (!resp.ok) {
-      const err = await resp.text();
-      removeEl(thinkingEl);
-      addErrorBubble(`Server error ${resp.status}: ${err}`);
-      return;
-    }
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buf = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
-
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const raw = line.slice(5).trim();
-        if (!raw) continue;
-        let event;
-        try { event = JSON.parse(raw); } catch { continue; }
-
-        removeEl(thinkingEl);
-
-        switch (event.type) {
-          case 'draft_id':
-            draftId = event.draft_id;
-            updateDraftBadge(draftId);
-            break;
-
-          case 'tool_call':
-            addToolEvent(event.name, event.args, event.result);
-            applyToolCall(event.name, event.args, event.result);
-            break;
-
-          case 'chunk':
-            if (!assistantEl) {
-              assistantEl = addMessage('assistant', '');
-            }
-            assistantText += event.text;
-            setMessageText(assistantEl, assistantText);
-            break;
-
-          case 'done':
-            if (draftId !== event.draft_id && event.draft_id) {
-              draftId = event.draft_id;
-              updateDraftBadge(draftId);
-            }
-            if (assistantText) {
-              conversationHistory.push({ role: 'assistant', content: assistantText });
-            }
-            break;
-
-          case 'error':
-            addErrorBubble(event.message);
-            break;
-        }
-      }
-    }
+    await runBrowserDelegatedChat(cfg, thinkingEl);
   } catch (err) {
     removeEl(thinkingEl);
-    addErrorBubble(`Connection error: ${err.message}`);
+    addErrorBubble(`Browser-direct LLM error: ${err.message}`);
   } finally {
     isStreaming = false;
     setInputEnabled(true);
     document.getElementById('user-input').focus();
   }
+}
+
+async function runBrowserDelegatedChat(cfg, thinkingEl) {
+  const session = await ensureBuilderSession();
+  const openaiShape = cfg.chat_path.includes('/v1/');
+  const url = `${cfg.base_url.replace(/\/+$/, '')}${cfg.chat_path.startsWith('/') ? cfg.chat_path : '/' + cfg.chat_path}`;
+  const localMessages = [
+    { role: 'system', content: session.system_prompt },
+    ...conversationHistory,
+  ];
+
+  let assistantText = '';
+  let assistantEl = null;
+
+  for (let step = 0; step < 12; step++) {
+    const data = await callLocalBuilderModel(url, cfg, localMessages, session.tools, openaiShape);
+    removeEl(thinkingEl);
+
+    const msg = extractAssistantMessage(data);
+    const toolCalls = normalizeToolCalls(msg.tool_calls || []);
+
+    if (!toolCalls.length) {
+      assistantText = msg.content || '';
+      if (!assistantText) assistantText = '(no response from model - check your connection settings)';
+      assistantEl = addMessage('assistant', '');
+      for (let i = 0; i < assistantText.length; i += 40) {
+        setMessageText(assistantEl, assistantText.slice(0, i + 40));
+        await delayFrame();
+      }
+      conversationHistory.push({ role: 'assistant', content: assistantText });
+      return;
+    }
+
+    localMessages.push({
+      role: 'assistant',
+      content: msg.content || '',
+      tool_calls: toolCalls.map(tc => tc.original),
+    });
+
+    for (const tc of toolCalls) {
+      const toolResult = await dispatchBuilderTool(tc.name, tc.args);
+      if (toolResult.draft_id && toolResult.draft_id !== draftId) {
+        draftId = toolResult.draft_id;
+        updateDraftBadge(draftId);
+      }
+      addToolEvent(toolResult.name, toolResult.args, toolResult.result);
+      applyToolCall(toolResult.name, toolResult.args, toolResult.result);
+
+      const toolMsg = {
+        role: 'tool',
+        content: JSON.stringify(toolResult.result),
+      };
+      if (openaiShape) toolMsg.tool_call_id = tc.id || 'call_0';
+      localMessages.push(toolMsg);
+    }
+  }
+
+  addErrorBubble('The builder stopped after too many tool-call rounds. Try asking it to summarize or export.');
+}
+
+async function ensureBuilderSession() {
+  if (builderSession && builderSession.draft_id === draftId) return builderSession;
+  const resp = await fetch('/api/builder/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ draft_id: draftId }),
+  });
+  if (!resp.ok) throw new Error(`builder session failed (${resp.status})`);
+  builderSession = await resp.json();
+  if (builderSession.draft_id) {
+    draftId = builderSession.draft_id;
+    updateDraftBadge(draftId);
+  }
+  return builderSession;
+}
+
+async function callLocalBuilderModel(url, cfg, messages, tools, openaiShape) {
+  const payload = openaiShape
+    ? {
+        model: cfg.model,
+        messages,
+        tools,
+        stream: false,
+        temperature: 0.4,
+        max_tokens: 1024,
+      }
+    : {
+        model: cfg.model,
+        messages,
+        tools,
+        stream: false,
+        options: { temperature: 0.4, num_predict: 1024 },
+      };
+
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    throw new Error(`LLM ${resp.status}: ${body.slice(0, 240)}`);
+  }
+  return resp.json();
+}
+
+function extractAssistantMessage(data) {
+  if (data?.message) return data.message || {};
+  const choices = data?.choices || [];
+  if (choices.length) return choices[0]?.message || {};
+  if (data?.error) throw new Error(String(data.error?.message || data.error));
+  return {};
+}
+
+function normalizeToolCalls(toolCalls) {
+  return toolCalls.map((tc, idx) => {
+    const fn = tc.function || tc;
+    let args = fn.arguments ?? fn.args ?? {};
+    if (typeof args === 'string') {
+      try { args = JSON.parse(args); } catch { args = {}; }
+    }
+    return {
+      id: tc.id || `call_${idx}`,
+      name: fn.name || tc.name || '',
+      args: args || {},
+      original: tc.function ? tc : {
+        id: tc.id || `call_${idx}`,
+        type: 'function',
+        function: { name: fn.name || tc.name || '', arguments: JSON.stringify(args || {}) },
+      },
+    };
+  }).filter(tc => tc.name);
+}
+
+async function dispatchBuilderTool(name, args) {
+  const resp = await fetch('/api/builder/tool', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, args, draft_id: draftId }),
+  });
+  if (!resp.ok) throw new Error(`tool dispatch failed (${resp.status})`);
+  return resp.json();
+}
+
+function delayFrame() {
+  return new Promise(resolve => requestAnimationFrame(resolve));
 }
 
 // ── tool call application → registry viz ──────────────────────────────────
@@ -1315,6 +1383,7 @@ function resetConversation() {
   draftId = null;
   conversationHistory = [];
   lastExportJSON = '';
+  builderSession = null;
 
   // reset regState and draftState
   regState.title = ''; regState.description = '';
