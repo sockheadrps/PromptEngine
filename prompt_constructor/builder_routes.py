@@ -101,6 +101,71 @@ def _browser_tools() -> list[dict[str, Any]]:
     return _strip_tool_descriptions(_TOOLS)
 
 
+def _normalize_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """Accept common model-produced aliases without crashing tool dispatch."""
+    out = dict(args or {})
+    if "section" in out and "section_key" not in out:
+        out["section_key"] = out.pop("section")
+
+    if name == "registry.section.add_item":
+        item = out.pop("item", None)
+        if isinstance(item, dict):
+            out.setdefault("item_id", item.get("id") or item.get("name"))
+            fields = dict(item)
+            fields.pop("id", None)
+            fields.pop("name", None)
+            out.setdefault("fields", fields)
+        if "fields" not in out:
+            reserved = {"draft_id", "section_key", "item_id"}
+            fields = {key: val for key, val in out.items() if key not in reserved}
+            if fields:
+                out["fields"] = fields
+                for key in fields:
+                    out.pop(key, None)
+
+    if name == "registry.item.add_fragment":
+        fragment = out.pop("fragment", None)
+        if isinstance(fragment, dict):
+            out.setdefault("fragment_id", fragment.get("id") or fragment.get("name"))
+            for key in ("text", "condition", "label"):
+                if key in fragment:
+                    out.setdefault(key, fragment[key])
+
+    if name == "registry.item.add_group":
+        group = out.pop("group", None)
+        if isinstance(group, dict):
+            out.setdefault("group_id", group.get("id") or group.get("name"))
+            if "items" in group and "directives" not in out:
+                out["directives"] = group["items"]
+            if "directives" in group:
+                out.setdefault("directives", group["directives"])
+            if "pre_context" in group:
+                out.setdefault("pre_context", group["pre_context"])
+
+    if name == "registry.assembly.set_order" and "assembly_order" in out and "order" not in out:
+        out["order"] = out.pop("assembly_order")
+    if name == "registry.generation.set" and "generation" in out and "params" not in out:
+        out["params"] = out.pop("generation")
+    if name == "registry.output_policy.set" and "output_policy" in out and "policy" not in out:
+        out["policy"] = out.pop("output_policy")
+    if name == "registry.memory.configure" and "memory_config" in out and "config" not in out:
+        out["config"] = out.pop("memory_config")
+
+    if name in ("registry.classifier_rule.add", "registry.classifier_rule.update"):
+        if "rule" in out and isinstance(out["rule"], dict):
+            rule = out.pop("rule")
+            for key, val in rule.items():
+                out.setdefault(key, val)
+        if "ending" in out and "ending_text" not in out:
+            out["ending_text"] = out.pop("ending")
+        if "endingText" in out and "ending_text" not in out:
+            out["ending_text"] = out.pop("endingText")
+        if name == "registry.classifier_rule.add" and "description" not in out and out.get("tag"):
+            out["description"] = f"When the classifier emits {out['tag']}."
+
+    return out
+
+
 # ── tool definitions ──────────────────────────────────────────────────────────
 
 _TOOLS: list[dict[str, Any]] = [
@@ -475,6 +540,7 @@ _TOOLS: list[dict[str, Any]] = [
 
 def _dispatch(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Execute a builder_api function by tool name. Returns a plain result dict."""
+    args = _normalize_tool_args(name, args)
     try:
         if name == "registry.draft.create":
             return api.draft_create(**args)
@@ -522,7 +588,7 @@ def _dispatch(name: str, args: dict[str, Any]) -> dict[str, Any]:
         if name == "registry.style_blend.disable":
             return api.style_blend_disable(**args)
         return {"error": f"Unknown tool: {name}"}
-    except (KeyError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         return {"error": str(exc)}
 
 
@@ -577,10 +643,12 @@ async def builder_session(req: BuilderSessionRequest) -> dict[str, Any]:
 @router.post("/tool")
 async def builder_tool(req: BuilderToolRequest) -> dict[str, Any]:
     """Apply one builder tool call from a browser-delegated LLM response."""
-    args = dict(req.args or {})
+    args = _normalize_tool_args(req.name, dict(req.args or {}))
     if req.draft_id and req.name != "registry.draft.create" and not args.get("draft_id"):
         args["draft_id"] = req.draft_id
     result = _dispatch(req.name, args)
+    if not isinstance(result, dict):
+        result = {"result": result}
     return {
         "name": req.name,
         "args": args,
