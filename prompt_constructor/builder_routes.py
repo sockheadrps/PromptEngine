@@ -70,6 +70,37 @@ def _build_system_prompt() -> str:
     return prompt
 
 
+_BROWSER_BUILDER_PROMPT = """You are the PromptLibretto Registry Assistant.
+Build complete PromptLibretto model registries through tool calls.
+
+Rules:
+- If there is no draft_id, call registry.draft.create first.
+- If the user asks for a complete registry, make reasonable choices and do not ask follow-up questions.
+- Prefer this order: meta.set, section.add_item for base_context/personas/sentiment/output_prompt_directions/prompt_endings, assembly.set_order, generation.set, validate, then explain briefly.
+- Use user_message only as an assembly_order token; do not create a user_message section.
+- Required core sections are base_context, personas, sentiment, output_prompt_directions, and prompt_endings.
+- prompt_endings item should use name "endings" and may include items ["you say:"].
+- For memory registries, add memory_recall with text "{memory_recall}", configure memory, add useful classifier rules, and include memory_recall.text in assembly_order.
+- Keep tool-call arguments compact and valid. After tool calls are applied, answer with a short summary of what was built.
+"""
+
+
+def _strip_tool_descriptions(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _strip_tool_descriptions(val)
+            for key, val in value.items()
+            if key != "description"
+        }
+    if isinstance(value, list):
+        return [_strip_tool_descriptions(item) for item in value]
+    return value
+
+
+def _browser_tools() -> list[dict[str, Any]]:
+    return _strip_tool_descriptions(_TOOLS)
+
+
 # ── tool definitions ──────────────────────────────────────────────────────────
 
 _TOOLS: list[dict[str, Any]] = [
@@ -538,8 +569,8 @@ async def builder_session(req: BuilderSessionRequest) -> dict[str, Any]:
         draft_id = api.draft_create()["draft_id"]
     return {
         "draft_id": draft_id,
-        "system_prompt": _get_system_prompt(),
-        "tools": _TOOLS,
+        "system_prompt": _BROWSER_BUILDER_PROMPT,
+        "tools": _browser_tools(),
     }
 
 
