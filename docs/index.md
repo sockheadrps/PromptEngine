@@ -1,6 +1,6 @@
 # promptlibretto
 
-`promptlibretto` is a schema v2 prompt registry library. It assembles prompts from named sections, runtime state, and an explicit `assembly_order`.
+`promptlibretto` is a prompt registry library. It assembles prompts from named sections, runtime state, and an explicit `assembly_order`.
 
 ## Minimal Example
 
@@ -35,7 +35,7 @@ print(eng.hydrate({"personas": {"selected": "direct"}}))
 - `OutputDirection`, `PromptEnding`
 - `Display`, `Fragment`, `Scale`
 
-Only schema `version: 2` is supported.
+Use these model names when authoring registries in Python.
 
 ## State Shape
 
@@ -93,41 +93,7 @@ Built-ins:
 - `MockProvider`
 - `OllamaProvider`
 
-## Memory
-
-Install the memory extra and use `MemoryEngine` to add persistent memory on top of any `Engine`:
-
-```bash
-pip install "promptlibretto[memory]"
-ollama pull nomic-embed-text
-```
-
-`MemoryEngine` provides:
-
-- **Semantic retrieval** — embeds user input and retrieves relevant past turns via sqlite-vec
-- **Classifier-driven routing** — a small LLM call extracts tags; `memory_rules` map those tags to state mutations
-- **Emotional state** — per-participant float vector (warmth, tension, trust, …) that decays toward neutral and shifts via rules
-- **Working notes** — background side-call maintains a running per-participant summary updated every N turns
-- **System summary** — compresses the assembled system prompt every N model turns
-- **Memory debt** — persistent list of unresolved threads opened/closed by rules; injected into recall each turn
-- **Episodic compression** — compresses session turns into a single embedded `Episode` on session end; past episodes are retrieved alongside individual turns
-- **Relationship arc** — background side-call generates cross-session observations about how the relationship dynamic is changing; injected as `{relationship_context}`
-
-`MemoryEngine.run()` returns the standard `GenerationResult` extended with `retrieved_chunks`, `extracted_tags`, `applied_rules`, and `final_state`.
-
-## Prompt Constructor
-
-```bash
-pip install "promptlibretto[prompt-constructor,ollama]"
-prompt-constructor --port 8000
-```
-
-- **`/`** Studio — runtime tuning surface
-- **`/builder`** Builder — visual registry authoring
-- **`/chatbuilder`** Chat Builder — conversation-driven registry builder via AI assistant
-- **`/ensemble`** Ensemble — two-participant model-vs-model or model-vs-human conversations
 
 ## More
 
 - [Design](design.md)
-- [Prompt Constructor server notes](server.md)

@@ -1,4 +1,4 @@
-"""Registry-based prompt model — schema v2."""
+"""Registry-based prompt model."""
 from __future__ import annotations
 
 from .engine import Engine, GenerationChunk, GenerationResult

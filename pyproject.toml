@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "promptlibretto"
-version = "0.6.0"
-description = "Registry-based prompt model: sections of items, an assembly order, runtime modes, and Prompt Constructor, a browser toolset that exports the same JSON the library loads."
+version = "0.7.0"
+description = "Registry-based prompt model: sections of items, an assembly order, and runtime state."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -24,8 +24,6 @@ dependencies = []
 
 [project.optional-dependencies]
 ollama = ["httpx>=0.25"]
-prompt-constructor = ["fastapi>=0.110", "uvicorn>=0.27", "httpx>=0.25", "pydantic>=2.0"]
-memory = ["httpx>=0.25", "sqlite-vec>=0.1"]
 dev = [
     "pytest>=7.4",
     "pytest-asyncio>=0.23",
@@ -36,16 +34,12 @@ dev = [
 Homepage = "https://github.com/sockheadrps/promptlibretto"
 Issues = "https://github.com/sockheadrps/promptlibretto/issues"
 
-[project.scripts]
-prompt-constructor = "prompt_constructor.run:main"
-
 [tool.hatch.build.targets.wheel]
-packages = ["promptlibretto", "prompt_constructor"]
+packages = ["promptlibretto"]
 
 [tool.hatch.build.targets.sdist]
 include = [
     "promptlibretto/",
-    "prompt_constructor/",
     "README.md",
     "DESIGN.md",
     "pyproject.toml",
