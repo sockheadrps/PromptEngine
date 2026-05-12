@@ -19,6 +19,12 @@ let activeEmbedWs = null;
 const participantState = { a: null, b: null };
 let hasRun = false;
 
+function sendEmbedWs(ws, payload) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  ws.send(JSON.stringify(payload));
+  return true;
+}
+
 // Collected per-run for post-run analytics.
 let _runTraceLog = [];
 let _runNames = { a: "A", b: "B" };
@@ -536,7 +542,7 @@ async function startEnsemble() {
     const pathOverride = document.getElementById(`${side}-embed_path`)?.value?.trim();
     return {
       url:   urlOverride || mc.embed_url   || mc.classifier_url || conn.baseUrl,
-      path:  pathOverride || mc.embed_path || "/api/embed",
+      path:  pathOverride || mc.embed_path || ((conn.chatPath || '').includes('/v1/') ? '/v1/embeddings' : '/api/embed'),
       model: mc.embed_model || "nomic-embed-text",
       shape: mc.embed_payload_shape || "auto",
     };
@@ -600,9 +606,9 @@ async function startEnsemble() {
           if (!resp.ok) throw new Error(`embed HTTP ${resp.status}`);
           const data = await resp.json();
           const vectors = data.embeddings?.[0] ?? data.data?.[0]?.embedding ?? data.embedding ?? [];
-          embedWs.send(JSON.stringify({ type: "embed_result", id, vectors }));
+          sendEmbedWs(embedWs, { type: "embed_result", id, vectors });
         } catch (e) {
-          embedWs.send(JSON.stringify({ type: "embed_error", id, error: String(e.message) }));
+          sendEmbedWs(embedWs, { type: "embed_error", id, error: String(e.message) });
         }
 
       } else if (msg.type === "chat_request") {
@@ -614,7 +620,6 @@ async function startEnsemble() {
           if (isOpenAI) {
             body = { model, messages, temperature, max_tokens, stream: true };
             if (top_p   != null) body.top_p            = top_p;
-            if (repeat_penalty != null) body.frequency_penalty = repeat_penalty;
           } else {
             const options = {};
             if (temperature    != null) options.temperature    = temperature;
@@ -629,7 +634,10 @@ async function startEnsemble() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           });
-          if (!resp.ok) throw new Error(`chat HTTP ${resp.status}`);
+          if (!resp.ok) {
+            const detail = await resp.text().catch(() => "");
+            throw new Error(`chat HTTP ${resp.status}${detail ? `: ${detail}` : ""}`);
+          }
 
           const reader = resp.body.getReader();
           const decoder = new TextDecoder();
@@ -654,13 +662,13 @@ async function startEnsemble() {
                 const delta = isOpenAI
                   ? (chunk.choices?.[0]?.delta?.content ?? "")
                   : (chunk.message?.content ?? chunk.content ?? "");
-                if (delta) embedWs.send(JSON.stringify({ type: "chat_chunk", id, delta }));
+                if (delta) sendEmbedWs(embedWs, { type: "chat_chunk", id, delta });
               } catch { /* skip malformed */ }
             }
           }
-          embedWs.send(JSON.stringify({ type: "chat_done", id }));
+          sendEmbedWs(embedWs, { type: "chat_done", id });
         } catch (e) {
-          embedWs.send(JSON.stringify({ type: "chat_error", id, error: String(e.message) }));
+          sendEmbedWs(embedWs, { type: "chat_error", id, error: String(e.message) });
         }
       }
     };

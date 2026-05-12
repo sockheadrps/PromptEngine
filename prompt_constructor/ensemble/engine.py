@@ -108,7 +108,39 @@ class EnsembleEngine:
                     f"Speak only as {speaker.name}; do not write {other_name}'s response."
                 ),
             ))
-        return messages
+        return self._normalize_chat_messages(messages)
+
+    @staticmethod
+    def _normalize_chat_messages(messages: list[ProviderMessage]) -> list[ProviderMessage]:
+        """Keep dialogue compatible with strict user/assistant chat templates."""
+        if len(messages) <= 1:
+            return messages
+
+        normalized: list[ProviderMessage] = [messages[0]]
+        dialogue = messages[1:]
+
+        if dialogue and dialogue[0].role == "assistant":
+            normalized.append(ProviderMessage(
+                role="user",
+                content="Continue the conversation from the context above.",
+            ))
+
+        for msg in dialogue:
+            if msg.role not in {"user", "assistant"}:
+                normalized[0] = ProviderMessage(
+                    role=normalized[0].role,
+                    content=normalized[0].content.rstrip() + "\n\n" + msg.content.strip(),
+                )
+                continue
+            if normalized[-1].role == msg.role:
+                normalized[-1] = ProviderMessage(
+                    role=msg.role,
+                    content=normalized[-1].content.rstrip() + "\n\n" + msg.content.strip(),
+                )
+            else:
+                normalized.append(msg)
+
+        return normalized
 
     def _build_request(self, speaker: Participant, messages: list[ProviderMessage]) -> ProviderRequest:
         assert speaker.engine is not None, "engine required for non-human participants"

@@ -149,6 +149,18 @@ function hasUsage(data) {
   return !!(t && typeof t === "object" && (t.prompt_n != null || t.predicted_n != null));
 }
 
+export function extractFinishReason(data) {
+  if (!data || typeof data !== "object") return null;
+  const choices = data.choices;
+  if (Array.isArray(choices) && choices.length) {
+    const reason = choices[0]?.finish_reason;
+    if (reason != null) return reason;
+  }
+  if (data.done_reason != null) return data.done_reason;
+  if (data.finish_reason != null) return data.finish_reason;
+  return null;
+}
+
 async function fetchJson(url, payload, timeoutMs) {
   const abort = new AbortController();
   const timer = timeoutMs ? setTimeout(() => abort.abort(), timeoutMs) : null;
@@ -181,6 +193,7 @@ export async function generate(connection, request) {
     text: extractText(data),
     usage: extractUsage(data),
     timing: extractTiming(data, elapsedMs),
+    finish_reason: extractFinishReason(data),
     raw: data,
   };
 }
@@ -219,6 +232,7 @@ export async function streamGenerate(connection, request, onDelta) {
 
   const buffer = [];
   let finalData = null;
+  let finishReason = null;
   const started = performance.now();
 
   try {
@@ -251,7 +265,9 @@ export async function streamGenerate(connection, request, onDelta) {
         buffer.push(piece);
         if (onDelta) onDelta(piece);
       }
+      finishReason = extractFinishReason(data) ?? finishReason;
       if (hasUsage(data)) finalData = data;
+      if (finishReason != null) finalData = data;
       if (data.done) {
         finalData = data;
         break outer;
@@ -267,6 +283,7 @@ export async function streamGenerate(connection, request, onDelta) {
     text: buffer.join(""),
     usage: extractUsage(data),
     timing: extractTiming(data, elapsedMs),
+    finish_reason: extractFinishReason(data) ?? finishReason,
     raw: data,
   };
 }

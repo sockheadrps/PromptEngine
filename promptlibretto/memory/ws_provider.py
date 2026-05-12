@@ -36,9 +36,15 @@ class WsProvider:
     async def generate(self, request: ProviderRequest) -> ProviderResponse:
         t0 = time.monotonic()
         full: list[str] = []
+        final: ProviderResponse | None = None
         async for chunk in self.stream(request):
             if chunk.text:
                 full.append(chunk.text)
+            if chunk.done and chunk.response is not None:
+                final = chunk.response
+        if final is not None:
+            final.text = "".join(full)
+            return final
         return ProviderResponse(
             text="".join(full),
             timing=ProviderTiming(total_ms=(time.monotonic() - t0) * 1000),
@@ -62,6 +68,8 @@ class WsProvider:
         })
         t0 = time.monotonic()
         full: list[str] = []
+        final_usage = ProviderUsage()
+        final_raw: Any = None
         try:
             while True:
                 try:
@@ -71,13 +79,38 @@ class WsProvider:
                         f"chat_request {req_id[:8]} timed out — "
                         "browser did not respond within 120 s."
                     )
+                if isinstance(item, dict) and item.get("type") == "done":
+                    usage = item.get("usage")
+                    if isinstance(usage, dict):
+                        final_usage = ProviderUsage(
+                            prompt_tokens=usage.get("prompt_tokens"),
+                            completion_tokens=usage.get("completion_tokens"),
+                            total_tokens=usage.get("total_tokens"),
+                        )
+                    final_raw = {
+                        "finish_reason": item.get("finish_reason"),
+                        "raw": item.get("raw"),
+                    }
+                    yield ProviderStreamChunk(
+                        text="",
+                        done=True,
+                        response=ProviderResponse(
+                            text="".join(full),
+                            usage=final_usage,
+                            timing=ProviderTiming(total_ms=(time.monotonic() - t0) * 1000),
+                            raw=final_raw,
+                        ),
+                    )
+                    break
                 if item is None:
                     yield ProviderStreamChunk(
                         text="",
                         done=True,
                         response=ProviderResponse(
                             text="".join(full),
+                            usage=final_usage,
                             timing=ProviderTiming(total_ms=(time.monotonic() - t0) * 1000),
+                            raw=final_raw,
                         ),
                     )
                     break
@@ -93,10 +126,21 @@ class WsProvider:
         if q is not None:
             q.put_nowait(delta)
 
-    def receive_done(self, req_id: str) -> None:
+    def receive_done(
+        self,
+        req_id: str,
+        usage: dict[str, Any] | None = None,
+        finish_reason: str | None = None,
+        raw: Any = None,
+    ) -> None:
         q = self._pending.get(req_id)
         if q is not None:
-            q.put_nowait(None)
+            q.put_nowait({
+                "type": "done",
+                "usage": usage or {},
+                "finish_reason": finish_reason,
+                "raw": raw,
+            })
 
     def reject(self, req_id: str, error: str) -> None:
         q = self._pending.get(req_id)

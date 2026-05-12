@@ -29,6 +29,9 @@ const regState = {
 // mirrors the "state" block in exported registry files
 const draftState = {}; // section_key → { selected, array_modes, slider, template_vars }
 
+// section keys discovered from the loaded registry that aren't in SECTION_KEYS
+let extraSectionKeys = [];
+
 let currentDetailSection = null; // section currently open in the detail panel
 
 const SECTION_KEYS = [
@@ -863,7 +866,7 @@ function setRegDesc(desc) {
 // ── section state helpers ──────────────────────────────────────────────────
 
 function secState(sectionKey) {
-  if (!draftState[sectionKey]) draftState[sectionKey] = { selected: null, array_modes: {}, slider: null };
+  if (!draftState[sectionKey]) draftState[sectionKey] = { selected: null, array_modes: {}, slider: null, template_vars: {} };
   return draftState[sectionKey];
 }
 
@@ -1265,12 +1268,12 @@ function _buildStateBlock() {
         for (const [k, v] of Object.entries(st.array_modes)) entry.array_modes[k] = v;
       }
     }
-    // Auto-include template_vars as empty-string defaults so the Builder UI
-    // knows which variables to surface for this section.
+    // Include template_vars for this section, using stored draftState values with empty-string fallback.
     const vars = regState.sections[sec]?.vars || [];
+    const storedTvars = st?.template_vars || {};
     if (vars.length) {
       entry.template_vars = {};
-      for (const v of vars) entry.template_vars[v] = '';
+      for (const v of vars) entry.template_vars[v] = storedTvars[v] ?? '';
     }
     if (Object.keys(entry).length) stateBlock[sec] = entry;
   }
@@ -1323,7 +1326,7 @@ function _buildClientRegistry(serverRegistry) {
 
   // Sections: prefer server data when it has items (server has fragments/groups from add_fragment/add_group);
   // fall back to client regState when server section is empty.
-  for (const key of SECTION_KEYS) {
+  for (const key of [...SECTION_KEYS, ...extraSectionKeys]) {
     const serverSec = serverRegistry?.[key] || {};
     const clientSec = regState.sections[key] || { vars: [], items: [] };
     const serverHasItems = (serverSec.items || []).length > 0;
@@ -1454,8 +1457,36 @@ function loadRegistrySnap(snap) {
   regState.style_blend   = reg.style_blend || {};
   regState.memory_rules  = reg.memory_rules || [];
 
+  // detect registry section keys not in SECTION_KEYS and create cards for them
+  const META_KEYS = new Set([
+    'version', 'title', 'description', 'assembly_order', 'default_state',
+    'generation', 'output_policy', 'memory_config', 'memory_rules', 'style_blend',
+  ]);
+  const knownKeys = new Set(SECTION_KEYS);
+  extraSectionKeys = Object.keys(reg).filter(
+    k => !META_KEYS.has(k) && !knownKeys.has(k) && reg[k] && typeof reg[k] === 'object' && Array.isArray(reg[k].items)
+  );
+  if (extraSectionKeys.length) {
+    const grid = document.getElementById('sections-grid');
+    for (const key of extraSectionKeys) {
+      regState.sections[key] = { vars: [], items: [] };
+      const card = document.createElement('div');
+      card.className = 'cb-section-card';
+      card.id = `sec-card-${key}`;
+      card.innerHTML = `
+        <div class="cb-section-name">${SECTION_LABELS[key] || key}</div>
+        <div class="cb-section-items" id="sec-items-${key}">
+          <span class="cb-sec-empty">Empty</span>
+        </div>
+        <div class="cb-section-vars" id="sec-vars-${key}"></div>
+      `;
+      card.onclick = () => openSectionDetail(key);
+      grid.appendChild(card);
+    }
+  }
+
   // populate sections (buildSectionGrid already reset them to empty)
-  for (const key of SECTION_KEYS) {
+  for (const key of [...SECTION_KEYS, ...extraSectionKeys]) {
     const sec = reg[key];
     if (!sec) continue;
     regState.sections[key] = {
@@ -1471,9 +1502,10 @@ function loadRegistrySnap(snap) {
   for (const [sec, st] of Object.entries(stateBlock)) {
     if (!st || typeof st !== 'object') continue;
     draftState[sec] = {
-      selected:    st.selected    ?? null,
-      array_modes: st.array_modes || {},
-      slider:      st.slider      ?? null,
+      selected:      st.selected    ?? null,
+      array_modes:   st.array_modes || {},
+      slider:        st.slider      ?? null,
+      template_vars: st.template_vars && typeof st.template_vars === 'object' ? { ...st.template_vars } : {},
     };
   }
 
@@ -1513,6 +1545,7 @@ function resetConversation() {
   regState.assembly = []; regState.generation = {};
   regState.output_policy = {}; regState.memory_config = {};
   regState.style_blend = {}; regState.memory_rules = [];
+  extraSectionKeys = [];
   for (const k of SECTION_KEYS) regState.sections[k] = { vars: [], items: [] };
 
   // close detail view if open

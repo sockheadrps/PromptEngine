@@ -100,7 +100,7 @@ class OutputProcessor:
             out = _TRAILING_INLINE_WS.sub("\n", out)
             out = _BLANK_LINES.sub("\n\n", out).strip()
         if p.max_length is not None and len(out) > p.max_length:
-            out = out[: p.max_length].rstrip()
+            out = _truncate_text(out, p.max_length)
         if p.append_suffix:
             out = (out + p.append_suffix).strip()
         return out
@@ -126,3 +126,19 @@ class OutputProcessor:
             if pattern and not re.search(pattern, text):
                 return ValidationResult(False, f"missing required pattern: {pattern!r}")
         return ValidationResult(True)
+
+
+def _truncate_text(text: str, max_length: int) -> str:
+    if max_length <= 0:
+        return ""
+    if len(text) <= max_length:
+        return text
+    cut = text[:max_length].rstrip()
+    if not cut:
+        return ""
+    boundary = max(cut.rfind(" "), cut.rfind("\n"), cut.rfind("\t"))
+    # Prefer a word boundary when it is close to the hard cap. For very long
+    # unbroken text, keep the exact character cap.
+    if boundary >= max_length * 0.8:
+        cut = cut[:boundary].rstrip()
+    return cut

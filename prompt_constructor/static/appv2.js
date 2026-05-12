@@ -9,7 +9,12 @@ const MEMORY_ENABLED = localStorage.getItem('promptlibretto.memory-enabled.v1') 
 
 import { mountWorkspaceChip } from "/static/session.js";
 import { mountConnectionChip, getConnection } from "/static/connection.js";
-import { generate as ollamaGenerate, streamGenerate } from "/static/ollama_client.js";
+import {
+  extractFinishReason,
+  extractUsage,
+  generate as ollamaGenerate,
+  streamGenerate,
+} from "/static/ollama_client.js";
 
 const $ = (id) => document.getElementById(id);
 const STUDIO_INBOX_KEY = "pl-studio-handoff-v1";
@@ -670,6 +675,27 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
     if (fp.length) out.forbidden_patterns = fp;
     return Object.keys(out).length ? out : null;
   }
+
+  function syncPolicyEditorToRegistry() {
+    if (!registry) return null;
+    const policy = readPolicyEditor();
+    if (policy) registry.output_policy = policy;
+    else delete registry.output_policy;
+    return policy;
+  }
+
+  document.querySelectorAll("#output-policy-editor input, #output-policy-editor textarea").forEach((el) => {
+    el.addEventListener("input", () => {
+      syncPolicyEditorToRegistry();
+      scheduleExampleDirtyCheck();
+      scheduleSnapshotDirtyCheck();
+    });
+    el.addEventListener("change", () => {
+      syncPolicyEditorToRegistry();
+      scheduleExampleDirtyCheck();
+      scheduleSnapshotDirtyCheck();
+    });
+  });
 
   const sectionRandom = {};
   const sectionSliders = {};
@@ -2794,6 +2820,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
       const missingTvars = collectMissingTvars();
       showTvarWarning(missingTvars);
       if (missingTvars.length) return;
+      syncPolicyEditorToRegistry();
 
       // — Memory pipeline path —
       if (MEMORY_ENABLED && hasMemoryRules()) {
@@ -2851,7 +2878,6 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
               if (isOpenAI) {
                 body = { model, messages, temperature, max_tokens, stream: true };
                 if (top_p != null) body.top_p = top_p;
-                if (repeat_penalty != null) body.frequency_penalty = repeat_penalty;
               } else {
                 const options = {};
                 if (temperature != null) options.temperature = temperature;
@@ -2862,20 +2888,45 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
                 if (max_tokens != null) body.num_predict = max_tokens;
               }
               const r = await fetch(chatUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-              if (!r.ok) throw new Error(`chat HTTP ${r.status}`);
+              if (!r.ok) {
+                const detail = await r.text().catch(() => "");
+                throw new Error(`chat HTTP ${r.status}${detail ? `: ${detail}` : ""}`);
+              }
               const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = "";
+              let finalData = null;
+              let finishReason = null;
+              const processChatLine = (line) => {
+                const t = line.trim(); if (!t) return;
+                let raw = t;
+                if (isOpenAI) { if (!t.startsWith("data:")) return; raw = t.slice(5).trim(); if (raw === "[DONE]") return; }
+                try {
+                  const chunk = JSON.parse(raw);
+                  finishReason = extractFinishReason(chunk) ?? finishReason;
+                  if (finishReason || chunk.usage || chunk.done || chunk.prompt_eval_count != null || chunk.eval_count != null) {
+                    finalData = chunk;
+                  }
+                  const delta = isOpenAI ? (chunk.choices?.[0]?.delta?.content ?? "") : (chunk.message?.content ?? chunk.content ?? "");
+                  if (delta) memWs.send(JSON.stringify({ type: "chat_chunk", id, delta }));
+                } catch { /* skip */ }
+              };
               while (true) {
-                const { value, done } = await reader.read(); if (done) break;
+                const { value, done } = await reader.read();
+                if (done) {
+                  buf += dec.decode();
+                  if (buf.trim()) processChatLine(buf);
+                  break;
+                }
                 buf += dec.decode(value, { stream: true });
                 const lines = buf.split("\n"); buf = lines.pop();
-                for (const line of lines) {
-                  const t = line.trim(); if (!t) continue;
-                  let raw = t;
-                  if (isOpenAI) { if (!t.startsWith("data:")) continue; raw = t.slice(5).trim(); if (raw === "[DONE]") continue; }
-                  try { const chunk = JSON.parse(raw); const delta = isOpenAI ? (chunk.choices?.[0]?.delta?.content ?? "") : (chunk.message?.content ?? chunk.content ?? ""); if (delta) memWs.send(JSON.stringify({ type: "chat_chunk", id, delta })); } catch { /* skip */ }
-                }
+                for (const line of lines) processChatLine(line);
               }
-              memWs.send(JSON.stringify({ type: "chat_done", id }));
+              memWs.send(JSON.stringify({
+                type: "chat_done",
+                id,
+                usage: extractUsage(finalData || {}),
+                finish_reason: extractFinishReason(finalData || {}) ?? finishReason,
+                raw: finalData,
+              }));
             } catch (e) { memWs.send(JSON.stringify({ type: "chat_error", id, error: String(e.message) })); }
           }
         };
@@ -2930,7 +2981,11 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           const modelName = result.model || conn.model || "default";
           if (timingEl && result.timing) timingEl.textContent = `${Math.round(result.timing.total_ms ?? 0)}ms`;
           if (acceptEl) acceptEl.textContent = result.accepted ? "✓ ok" : "✗ rejected";
-          if (usageEl  && result.usage)  usageEl.textContent  = `${result.usage.completion_tokens ?? "?"} tok`;
+          if (usageEl  && result.usage) {
+            const tokens = result.usage.completion_tokens ?? result.usage.total_tokens ?? "?";
+            const reason = result.finish_reason ? ` · ${result.finish_reason}` : "";
+            usageEl.textContent = `${tokens} tok${reason}`;
+          }
           if (routeEl)  routeEl.textContent  = `${modelName} · memory`;
 
           // Populate Debug Trace with the assembled prompt + memory steps + response.
@@ -2941,6 +2996,9 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
             session_id: result.session_id,
             base_url: conn.baseUrl || conn.base_url || "",
             chat_path: conn.chatPath || conn.chat_path || "",
+            output_policy: result.output_policy || {},
+            text_chars: result.text_chars ?? null,
+            raw_text_chars: result.raw_text_chars ?? null,
             extracted_tags: result.extracted_tags,
             applied_rules:  result.applied_rules,
             classifier:     result.classifier_stats,
@@ -2949,6 +3007,7 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
           setTrace("trace-attempts", result.text || "");
           setTrace("trace-usage", {
             accepted: result.accepted,
+            finish_reason: result.finish_reason ?? null,
             timing:   result.timing,
             usage:    result.usage,
           });
@@ -3054,14 +3113,21 @@ document.querySelectorAll("label.switch[hidden], .gen-controls-sep[hidden]").for
         const text = response.text || "";
         setOutput(text || "(empty response)");
         setTrace("trace-attempts", text);
-        setTrace("trace-usage", { total_ms: ms, ...(response.usage || {}) });
+        setTrace("trace-usage", {
+          total_ms: ms,
+          finish_reason: response.finish_reason ?? null,
+          ...(response.usage || {}),
+        });
 
         if (timingEl)   timingEl.textContent   = `${ms}ms`;
         if (acceptedEl) acceptedEl.textContent = text ? "✓ ok" : "✗ empty";
         const usage  = response.usage || {};
         const tokens = usage.completion_tokens ?? usage.eval_count ?? usage.total_tokens ?? null;
         if (usageEl) {
-          usageEl.textContent = tokens != null ? `${tokens} tok · ${text.length} chars` : `${text.length} chars`;
+          const reason = response.finish_reason ? ` · ${response.finish_reason}` : "";
+          usageEl.textContent = tokens != null
+            ? `${tokens} tok · ${text.length} chars${reason}`
+            : `${text.length} chars${reason}`;
         }
       } catch (e) {
         setOutput(`error: ${e.message}`);

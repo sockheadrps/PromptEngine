@@ -125,8 +125,23 @@ def _strip_tool_descriptions(value: Any) -> Any:
     return value
 
 
+_BROWSER_CORE_TOOLS = {
+    "registry.draft.create",
+    "registry.meta.set",
+    "registry.section.add_item",
+    "registry.item.update",
+    "registry.assembly.set_order",
+    "registry.generation.set",
+    "registry.draft.validate",
+    "registry.draft.export",
+}
+
 def _browser_tools() -> list[dict[str, Any]]:
-    return _strip_tool_descriptions(_TOOLS)
+    core = [
+        t for t in _TOOLS
+        if t.get("function", {}).get("name") in _BROWSER_CORE_TOOLS
+    ]
+    return _strip_tool_descriptions(core)
 
 
 def _normalize_tool_args(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -324,7 +339,7 @@ _TOOLS: list[dict[str, Any]] = [
                     "draft_id":    {"type": "string"},
                     "section_key": {"type": "string"},
                     "item_id":     {"type": "string", "description": "Unique ID within the section"},
-                    "fields":      {"type": "object", "description": "Item fields (varies by section type)"},
+                    "fields":      {"type": "object", "additionalProperties": True, "description": "Item fields (varies by section type)"},
                 },
                 "required": ["draft_id", "section_key", "item_id", "fields"],
             },

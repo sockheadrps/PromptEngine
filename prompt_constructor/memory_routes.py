@@ -53,7 +53,12 @@ async def memory_ws(websocket: WebSocket, ws_session_id: str) -> None:
             elif t == "chat_chunk":
                 provider.receive_chunk(rid, data.get("delta", ""))
             elif t == "chat_done":
-                provider.receive_done(rid)
+                provider.receive_done(
+                    rid,
+                    usage=data.get("usage") if isinstance(data.get("usage"), dict) else None,
+                    finish_reason=data.get("finish_reason"),
+                    raw=data.get("raw"),
+                )
             elif t == "chat_error":
                 provider.reject(rid, data.get("error", "unknown"))
     except (WebSocketDisconnect, Exception):
@@ -337,6 +342,20 @@ async def memory_generate(req: MemoryGenerateRequest, request: Request) -> dict[
             await embedder.aclose()
 
         actual_model = gen.get("model") or "default"
+        finish_reason = None
+        if isinstance(result.raw, dict):
+            finish_reason = result.raw.get("finish_reason")
+        raw_text_len = 0
+        raw_inner = result.raw.get("raw") if isinstance(result.raw, dict) else result.raw
+        if isinstance(raw_inner, dict):
+            choices = raw_inner.get("choices")
+            if isinstance(choices, list) and choices:
+                message = (choices[0] or {}).get("message")
+                if isinstance(message, dict) and isinstance(message.get("content"), str):
+                    raw_text_len = len(message["content"])
+                text = (choices[0] or {}).get("text")
+                if isinstance(text, str):
+                    raw_text_len = max(raw_text_len, len(text))
 
         return {
             "text":             result.text,
@@ -358,6 +377,10 @@ async def memory_generate(req: MemoryGenerateRequest, request: Request) -> dict[
             "applied_rules":     result.applied_rules,
             "timing":            result.timing,
             "usage":             result.usage,
+            "finish_reason":      finish_reason,
+            "output_policy":      reg.output_policy,
+            "text_chars":         len(result.text or ""),
+            "raw_text_chars":     raw_text_len or None,
             "classifier_stats":  result.classifier_stats,
         }
 
