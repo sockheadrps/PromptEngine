@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>promptlibretto builder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Manrope:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/templatebuilder.css" />
+</head>
+<body>
+  <header>
+    <div class="header-brand">
+      <h1>promptlibretto</h1>
+      <nav class="header-page-nav">
+        <a href="/" class="header-page-link">Home</a>
+        <span class="header-page-link active">Builder</span>
+        <a href="/studio" class="header-page-link">Studio</a>
+        <a href="/ensemble" class="header-page-link">Ensemble</a>
+        <a href="/assistant" class="header-page-link">Assistant</a>
+      </nav>
+    </div>
+    <div class="header-meta">
+      <select class="header-nav-btn" id="example-picker" onchange="handlePickerChange(this.value); this.value=''">
+        <option value="">Load…</option>
+      </select>
+      <button type="button" class="header-nav-btn" onclick="saveRegistry()">Save</button>
+    </div>
+  </header>
+
+  <div id="modal-overlay" onclick="closeModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+      <h3 class="modal-title" id="modal-title">Section Variables</h3>
+      <p class="modal-subtitle">Enter variable name like <code>{user_name}</code></p>
+      <input type="text" id="modal-input" class="mb-4" placeholder="{var_name}" onkeyup="if(event.key==='Enter') saveModal()">
+      <div class="modal-actions">
+        <button onclick="closeModal()" class="ghost-btn">Cancel</button>
+        <button onclick="saveModal()" class="primary-btn compact">Add Variable</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="json-import-modal" class="builder-modal-overlay" hidden onclick="closeJsonImportModal()">
+    <div class="modal-content modal-content-wide" onclick="event.stopPropagation()">
+      <h3 class="modal-title">Load Registry JSON</h3>
+      <p class="modal-subtitle">Paste a wrapped <code>{"registry": {...}}</code> object or a bare registry object.</p>
+      <textarea id="json-import-input" class="json-import-input" placeholder='{"registry": {"version": 2, ...}}'></textarea>
+      <div id="json-import-error" class="json-import-error" hidden></div>
+      <div class="modal-actions json-import-actions">
+        <button type="button" onclick="closeJsonImportModal()" class="ghost-btn">Cancel</button>
+        <button type="button" onclick="loadJsonImportModal()" class="primary-btn compact">Load</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="info-modal" class="section-info-overlay" hidden onclick="closeInfoModal()">
+    <div class="section-info-content" onclick="event.stopPropagation()">
+      <div class="section-info-header">
+        <h3 id="info-modal-title"></h3>
+        <button type="button" class="section-info-close" onclick="closeInfoModal()">×</button>
+      </div>
+      <div id="info-modal-body" class="section-info-body info-modal-html"></div>
+    </div>
+  </div>
+
+  <div id="section-info-modal" class="section-info-overlay" hidden onclick="closeSectionInfo()">
+    <div class="section-info-content" onclick="event.stopPropagation()">
+      <div class="section-info-header">
+        <h3 id="section-info-title"></h3>
+        <button type="button" class="section-info-close" onclick="closeSectionInfo()">×</button>
+      </div>
+      <p id="section-info-body" class="section-info-body"></p>
+      <div class="section-info-fields-wrap">
+        <span class="section-info-fields-label">Key fields</span>
+        <ul id="section-info-fields" class="section-info-fields"></ul>
+      </div>
+    </div>
+  </div>
+
+  <main class="builder-shell">
+
+    <section class="builder-meta-grid">
+      <div class="panel field-card">
+        <span class="field-ordinal">I</span>
+        <label>Registry Version</label>
+        <input type="number" id="model-version" value="2" readonly oninput="exportFullModel()" />
+      </div>
+      <div class="panel field-card">
+        <span class="field-ordinal">II</span>
+        <label>Registry Title</label>
+        <input type="text" id="model-title-input" value="" oninput="exportFullModel()" />
+      </div>
+      <div class="panel field-card">
+        <span class="field-ordinal">III</span>
+        <label>Registry Description</label>
+        <input type="text" id="model-desc-input" value="" oninput="exportFullModel()" />
+      </div>
+    </section>
+
+    <div id="builder-setup-card" hidden class="builder-setup-card">
+      <div class="setup-card-inner">
+        <h3 class="setup-card-title">Does this registry use memory?</h3>
+        <p class="setup-card-body">Memory enables conversation history retrieval, classifier tagging, and rolling summaries. This choice is set once per registry.</p>
+        <div class="setup-card-actions">
+          <button type="button" class="setup-btn setup-btn-yes" onclick="setMemoryChoice(true)">Yes — configure memory</button>
+          <button type="button" class="setup-btn setup-btn-no" onclick="setMemoryChoice(false)">No — proceed to builder</button>
+        </div>
+      </div>
+    </div>
+
+    <section class="builder-main-grid" id="builder-main-grid" hidden>
+      <div class="builder-authoring">
+        <div id="setup-phase-banner" hidden class="setup-phase-banner">
+          <span class="setup-banner-text">Set the classifier URL and model below, then continue.</span>
+          <button type="button" id="setup-continue-btn" class="setup-continue-btn" onclick="completeSetup()" disabled>Continue to Builder →</button>
+        </div>
+        <section class="panel builder-tab-panel">
+          <div class="builder-tabs" id="builder-tabs-row" role="tablist" aria-label="Builder panels">
+            <button type="button" id="tab-sections" class="builder-tab active" onclick="switchBuilderTab('sections')" aria-selected="true"><span class="tab-num">01</span>Sections</button>
+            <button type="button" id="tab-finalize" class="builder-tab" onclick="switchBuilderTab('finalize')" aria-selected="false"><span class="tab-num">02</span>Finalize</button>
+            <button type="button" id="tab-memory" class="builder-tab" onclick="switchBuilderTab('memory')" aria-selected="false"><span class="tab-num">03</span>Classifiers</button>
+          </div>
+        </section>
+
+        <section id="builder-tab-sections-panel" class="builder-tab-body active">
+          <section class="panel sections-panel">
+            <div class="panel-head">
+              <span class="panel-title">Sections</span>
+              <span class="panel-note">Author items, vars, and section metadata</span>
+            </div>
+            <div id="section-list" class="section-list"></div>
+          </section>
+        </section>
+
+        <section id="builder-tab-finalize-panel" class="builder-tab-body">
+          <section class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Prompt Flow</span>
+                <span class="panel-note">Compose the prompt as readable steps, then Builder exports the exact assembly tokens</span>
+              </div>
+            </div>
+            <input id="assembly-order-input" type="hidden" />
+            <div class="assembly-flow-layout">
+              <div class="assembly-current">
+                <div class="assembly-subhead">Current Flow</div>
+                <div id="assembly-order-list" class="assembly-flow-list"></div>
+              </div>
+              <div class="assembly-sidebar">
+                <div class="assembly-adders panel inset-panel">
+                  <div class="assembly-subhead">Add Token</div>
+                  <div class="assembly-token-groups">
+                    <div id="assembly-token-groups"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="builder-advanced-row">
+            <div class="panel field-panel collapsible-panel collapsed" data-builder-collapse>
+              <div class="panel-head">
+                <div>
+                  <span class="panel-title">Generation Overrides</span>
+                  <span class="panel-note">Optional top-level `generation`</span>
+                </div>
+                <button type="button" class="collapse-toggle" onclick="toggleBuilderCollapse(this)">Expand</button>
+              </div>
+              <div class="collapsible-body">
+                <div class="form-grid">
+                  <label><span>temperature</span><input id="gen-temperature" type="number" step="0.05" min="0" max="2" oninput="exportFullModel()" /></label>
+                  <label><span>top_p</span><input id="gen-top-p" type="number" step="0.05" min="0" max="1" oninput="exportFullModel()" /></label>
+                  <label><span>top_k</span><input id="gen-top-k" type="number" step="1" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_tokens</span><input id="gen-max-tokens" type="number" step="1" min="1" oninput="exportFullModel()" /></label>
+                  <label><span>repeat_penalty</span><input id="gen-repeat-penalty" type="number" step="0.05" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>retries</span><input id="gen-retries" type="number" step="1" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_prompt_chars</span><input id="gen-max-prompt-chars" type="number" step="100" min="0" oninput="exportFullModel()" /></label>
+                </div>
+              </div>
+            </div>
+            <div class="panel field-panel collapsible-panel collapsed" data-builder-collapse>
+              <div class="panel-head">
+                <div>
+                  <span class="panel-title">Output Policy</span>
+                  <span class="panel-note">Optional top-level `output_policy`</span>
+                </div>
+                <button type="button" class="collapse-toggle" onclick="toggleBuilderCollapse(this)">Expand</button>
+              </div>
+              <div class="collapsible-body">
+                <div class="form-grid">
+                  <label><span>min_length</span><input id="policy-min-length" type="number" min="0" oninput="exportFullModel()" /></label>
+                  <label><span>max_length</span><input id="policy-max-length" type="number" min="0" oninput="exportFullModel()" /></label>
+                  <label class="check-row"><span>collapse_whitespace</span><input id="policy-collapse-whitespace" type="checkbox" onchange="exportFullModel()" /></label>
+                  <label><span>append_suffix</span><input id="policy-append-suffix" type="text" oninput="exportFullModel()" /></label>
+                </div>
+                <div class="stack-fields">
+                  <label><span>strip_prefixes</span><textarea id="policy-strip-prefixes" rows="2" oninput="exportFullModel()" placeholder="One per line"></textarea></label>
+                  <label><span>strip_patterns</span><textarea id="policy-strip-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                  <label><span>required_patterns</span><textarea id="policy-required-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                  <label><span>forbidden_substrings</span><textarea id="policy-forbidden-substrings" rows="2" oninput="exportFullModel()" placeholder="One per line"></textarea></label>
+                  <label><span>forbidden_patterns</span><textarea id="policy-forbidden-patterns" rows="2" oninput="exportFullModel()" placeholder="Regex, one per line"></textarea></label>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </section>
+
+        <section id="builder-tab-memory-panel" class="builder-tab-body">
+          <section id="classifier-rules-panel" class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Classifier Rules</span>
+                <span class="panel-note">Each rule names a tag the classifier can fire, describes when it applies, optionally injects text into the prompt ending, and maps to one or more state changes</span>
+              </div>
+            </div>
+            <div id="memory-rules-list" class="memory-rules-list"></div>
+            <button type="button" class="btn-add" onclick="addMemoryRule()">+ Add Rule</button>
+          </section>
+
+          <section class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Memory Config</span>
+                <span class="panel-note">Connection settings for classifier and embedding</span>
+              </div>
+            </div>
+            <div class="mem-config-grid">
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Classifier</div>
+                <label class="mem-toggle-row">
+                  <input id="mem-use-classifier" type="checkbox" checked onchange="toggleClassifierSection(); exportFullModel()" />
+                  <span>use_classifier <span class="label-hint">run LLM classifier to extract tags</span></span>
+                </label>
+                <label class="mem-toggle-row">
+                  <input id="mem-auto-inject" type="checkbox" onchange="exportFullModel()" />
+                  <span>auto_inject <span class="label-hint">append memory recall to prompt when no memory_recall section exists</span></span>
+                </label>
+                <div id="mem-classifier-section">
+                  <label><span>classifier_url <span class="label-hint">base URL for tag classifier</span></span>
+                    <input id="mem-classifier-url" type="text" placeholder="http://localhost:8080" value="http://localhost:8080" oninput="exportFullModel()" />
+                  </label>
+                  <label><span>classifier_model</span>
+                    <div class="mem-model-row">
+                      <select id="mem-classifier-model" onchange="exportFullModel()">
+                        <option value="Qwen3.5-9B-Q4_K_M.gguf" selected>Qwen3.5-9B-Q4_K_M.gguf</option>
+                        <option value="">— fetch models —</option>
+                      </select>
+                      <button type="button" class="mem-conn-refresh" onclick="fetchClassifierModels()" title="Fetch models">↺</button>
+                      <span id="mem-classifier-test-result" class="mem-test-result"></span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Embedding <button type="button" class="mem-help-btn" onclick="openEmbedHelp(); event.preventDefault()">?</button></div>
+                <label class="mem-toggle-row">
+                  <input type="checkbox" id="mem-use-embed-url" onchange="toggleEmbedUrlSection(); exportFullModel()" />
+                  <span>Separate embed URL <span class="label-hint">if unchecked, uses classifier_url</span></span>
+                </label>
+                <div id="mem-embed-url-section" hidden>
+                  <label><span>embed_url</span>
+                    <input id="mem-embed-url" type="text" placeholder="http://localhost:11434" oninput="exportFullModel()" />
+                  </label>
+                </div>
+                <label><span>embed_model</span>
+                  <div class="mem-model-row">
+                    <select id="mem-embed-model" onchange="exportFullModel()">
+                      <option value="">— fetch models —</option>
+                    </select>
+                    <button type="button" class="mem-conn-refresh" onclick="fetchEmbedModels()" title="Fetch embed models">↺</button>
+                    <span id="mem-embed-test-result" class="mem-test-result"></span>
+                  </div>
+                </label>
+              </div>
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Retrieval</div>
+                <div class="mem-config-two-col">
+                  <label><span>top_k</span>
+                    <input id="mem-top-k" type="number" step="1" min="1" max="20" oninput="exportFullModel()" />
+                  </label>
+                  <label><span>prune_keep <span class="label-hint">turns to keep</span></span>
+                    <input id="mem-prune-keep" type="number" step="1" min="1" max="10" placeholder="10" oninput="exportFullModel()" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="mem-config-card" id="mem-server-managed-paths">
+                <div class="mem-config-card-title">Storage</div>
+                <label><span>store_path <span class="label-hint">leave blank for workspace + registry default</span></span>
+                  <input id="mem-store-path" type="text" placeholder="memory.db" oninput="exportFullModel()" />
+                </label>
+                <label><span>personality_file <span class="label-hint">leave blank for workspace + registry default</span></span>
+                  <input id="mem-personality-file" type="text" placeholder="personality.json" oninput="exportFullModel()" />
+                </label>
+              </div>
+
+            </div>
+          </section>
+
+          <section class="panel field-panel">
+            <div class="panel-head">
+              <div>
+                <span class="panel-title">Style Blend</span>
+                <span class="panel-note">Blend between persona and sentiment items as emotional state shifts. Requires emotional state to be enabled in the ensemble.</span>
+              </div>
+            </div>
+            <div class="mem-config-grid">
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Personas</div>
+                <label class="mem-toggle-row">
+                  <input type="checkbox" id="sb-personas-enabled" onchange="updateStyleBlend()" />
+                  <span>Enable persona blend</span>
+                </label>
+                <div id="sb-personas-config" hidden>
+                  <label><span>axis <span class="label-hint">emotion dimension that drives the blend</span></span>
+                    <select id="sb-personas-axis" onchange="updateStyleBlend()">
+                      <option value="warmth">warmth</option>
+                      <option value="tension">tension</option>
+                      <option value="trust">trust</option>
+                      <option value="playfulness">playfulness</option>
+                    </select>
+                  </label>
+                  <label><span>primary <span class="label-hint">item when dimension is at or below threshold</span></span>
+                    <select id="sb-personas-primary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>secondary <span class="label-hint">item blended in as dimension rises</span></span>
+                    <select id="sb-personas-secondary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>threshold <span class="label-hint">activation point 0–1 (default 0.60)</span></span>
+                    <input id="sb-personas-threshold" type="number" step="0.05" min="0" max="1" placeholder="0.60" oninput="updateStyleBlend()" />
+                  </label>
+                </div>
+              </div>
+
+              <div class="mem-config-card">
+                <div class="mem-config-card-title">Sentiment</div>
+                <label class="mem-toggle-row">
+                  <input type="checkbox" id="sb-sentiment-enabled" onchange="updateStyleBlend()" />
+                  <span>Enable sentiment blend</span>
+                </label>
+                <div id="sb-sentiment-config" hidden>
+                  <label><span>axis</span>
+                    <select id="sb-sentiment-axis" onchange="updateStyleBlend()">
+                      <option value="warmth">warmth</option>
+                      <option value="tension">tension</option>
+                      <option value="trust">trust</option>
+                      <option value="playfulness">playfulness</option>
+                    </select>
+                  </label>
+                  <label><span>primary</span>
+                    <select id="sb-sentiment-primary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>secondary</span>
+                    <select id="sb-sentiment-secondary" onchange="updateStyleBlend()"><option value="">— select —</option></select>
+                  </label>
+                  <label><span>threshold</span>
+                    <input id="sb-sentiment-threshold" type="number" step="0.05" min="0" max="1" placeholder="0.65" oninput="updateStyleBlend()" />
+                  </label>
+                </div>
+              </div>
+
+            </div>
+          </section>
+        </section>
+      </div>
+
+      <aside class="builder-preview">
+        <section class="panel output-panel">
+          <div class="panel-head">
+            <div class="preview-tab-row">
+              <button type="button" id="preview-tab-json" class="preview-tab active" onclick="switchPreviewTab('json')">Registry JSON</button>
+              <button type="button" id="preview-tab-prompt" class="preview-tab" onclick="switchPreviewTab('prompt')">Example Prompt</button>
+              <button type="button" id="preview-tab-flow" class="preview-tab" onclick="switchPreviewTab('flow')">Flow View</button>
+            </div>
+            <div class="preview-actions">
+              <button id="preview-action-validate" onclick="validateRegistry()" class="primary-btn compact">Validate</button>
+              <button id="preview-action-copy" onclick="copyToClipboard()" class="primary-btn compact">Copy JSON</button>
+              <button onclick="openInStudio()" class="primary-btn compact">Open in Studio</button>
+            </div>
+          </div>
+
+          <div id="preview-json-panel">
+            <pre id="output-json" class="output-json"></pre>
+          </div>
+
+          <div id="preview-prompt-panel" hidden>
+            <div class="example-prompt-note">Example render — uses first item per section unless changed below. Template vars shown as-is.</div>
+            <div id="example-prompt-selections" class="example-prompt-selections"></div>
+            <pre id="example-prompt-output" class="output-json example-prompt-text"></pre>
+          </div>
+
+          <div id="preview-flow-panel" hidden>
+            <div class="example-prompt-note">Each assembly token shown as a labeled block. Empty tokens are dimmed.</div>
+            <div id="preview-flow-list" class="preview-flow-list"></div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+
+  <script defer src="/static/templatebuilder.js"></script>
+</body>
+</html>

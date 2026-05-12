@@ -310,6 +310,73 @@
         margin-bottom: 6px;
         font-style: normal;
       }
+
+      .presenter-controls {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        margin-bottom: 18px;
+        background: rgba(15, 23, 42, 0.94);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+      }
+
+      .presenter-controls .copy-btn {
+        font-size: 0.74rem;
+      }
+
+      .presenter-status {
+        margin-left: auto;
+        color: var(--text-dim);
+        font-family: 'Cascadia Code', Consolas, monospace;
+        font-size: 0.78rem;
+      }
+
+      .presenter-section {
+        padding: 18px 22px;
+        border-top: 1px solid var(--border);
+      }
+
+      .presenter-section.active {
+        background: rgba(45, 212, 191, 0.06);
+        box-shadow: inset 3px 0 0 var(--highlight);
+      }
+
+      .presenter-section h3 {
+        margin: 0 0 12px;
+        color: var(--highlight);
+        font-size: 0.9rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .presenter-section ul,
+      .presenter-section ol {
+        margin: 0 0 16px 24px;
+      }
+
+      .presenter-section blockquote {
+        margin: 14px 0;
+        padding: 10px 16px;
+        border-left: 3px solid var(--accent);
+        color: var(--text-dim);
+        background: rgba(139, 92, 246, 0.08);
+      }
+
+      [data-step] {
+        opacity: 0.18;
+        transform: scale(0.97);
+        transition: opacity 0.25s, transform 0.25s;
+      }
+      [data-step].step-active {
+        opacity: 1;
+        transform: scale(1);
+      }
     </style>
   </head>
   <body>
@@ -320,6 +387,9 @@
         </button>
         <button class="tab-btn" onclick="showTab('intro-script', this)">
           Intro Script
+        </button>
+        <button class="tab-btn" onclick="showTab('presenter-script', this)">
+          Presenter
         </button>
         <button class="tab-btn" onclick="showTab('builder-script', this)">
           Builder Script
@@ -336,7 +406,9 @@
       <div id="home-script" class="tab-panel active">
         <div class="script-wrap">
           <div class="script-header">
-            <span class="script-title">Home Page — Configuration &amp; Workspaces</span>
+            <span class="script-title"
+              >Home Page — Configuration &amp; Workspaces</span
+            >
             <button
               class="copy-btn"
               onclick="copyScript('home-script-text', this)"
@@ -370,8 +442,8 @@
               notes, summaries, and similar artifacts. If that workspace is
               cleared from browser storage, or you open the site from a
               different computer, the old workspace data will not be available
-              unless you still have that workspace ID and its saved files.
-              To make sure you never lose model registries you build, export and
+              unless you still have that workspace ID and its saved files. To
+              make sure you never lose model registries you build, export and
               store the registry JSON; it can be imported back into the site as
               raw JSON from any workspace.
             </p>
@@ -380,6 +452,333 @@
       </div>
 
       <!-- ── Tab 1: Intro Script ── -->
+      <div id="presenter-script" class="tab-panel">
+        <div class="presenter-controls">
+          <button class="copy-btn" onclick="openPresentation()">
+            Open Presentation
+          </button>
+          <button class="copy-btn" onclick="advancePresentation()">
+            Next Slide
+          </button>
+          <button class="copy-btn" onclick="resetPresentation()">
+            Reset Counter
+          </button>
+          <span class="presenter-status" id="presenter-status"
+            >slide trigger: 0</span
+          >
+        </div>
+        <div class="script-wrap">
+          <div class="script-header">
+            <span class="script-title">Prompt Libretto Structured Script</span>
+            <button
+              class="copy-btn"
+              onclick="copyScript('presenter-script-text', this)"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="script-body" id="presenter-script-text">
+            <section class="presenter-section" data-presenter-section>
+              <h3>1. The Problem</h3>
+              <p>
+                If you want an LLM's behavior to vary by persona, mood, context,
+                or conversation state, hardcoded prompt strings stop scaling. As
+                soon as you want strict control over dynamic behaviorial
+                presedence, and clear auditing capabilities, is when you need to
+                adopt and adapt to manage that complexity. Promptlibretto is an
+                effective abstraction layer and is not opinionated about how you
+                structure your prompts internally. Promptlibretto is a simple
+                organizational framework that has clear mechanics for how to
+                manage a wide range of use cases while keeping the system
+                auditable and maintainable. Typical patterns that emerge without
+                a systematic approach are:
+              </p>
+              <ul>
+                <li>
+                  Hard to navigate as a result of concatenated strings scattered
+                  across the codebase
+                </li>
+                <li>
+                  inconsistent prompt construction leading to irreproducible
+                  results
+                </li>
+                <li>no reliable audit trail to track changes</li>
+                <li>
+                  no clear understanding of what the model is actually receiving
+                </li>
+              </ul>
+              <p>
+                PromptLibretto as a sysytem is designed to ORchestreates this
+                kind of complex behavior. through layed registries, we can apply
+                distinct behavior rules sequentionally, enabling realtime
+                adaptation when registry definition or input context changes
+                dynamically. The framework builds the prompt structure before
+                finiling it with runtime data.
+              </p>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>The Registry</h3>
+              <p>
+                The registry is the authored blueprint; runtime state is the
+                per-call set of choices you make from that blueprint. This is
+                what lets one registry produce different prompts without editing
+                the registry itself.
+              </p>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>1. Registry Assembly</h3>
+              <p>
+                The registry is a JSON document that defines every section of a
+                prompt, the relationships between them, and the assembly order
+                that controls what the model actually receives.
+              </p>
+              <p>
+                At generation time, the engine walks assembly_order, resolves
+                the current state, fills template variables, and produces the
+                final prompt as a single string. This is the core mechanic — a
+                declared, auditable assembly path instead of scattered string
+                concatenation.
+              </p>
+            </section>
+
+            <section class="presenter-section" data-presenter-section data-presenter-steps="5">
+              <h3>3. Library Structure</h3>
+              <p>
+                <strong
+                  >⚑ 5 Next Slide presses within this slide (one per
+                  card):</strong
+                >
+              </p>
+              <ol>
+                <li>Next → Registry card enlarges</li>
+                <li>Next → Section card enlarges</li>
+                <li>Next → Runtime State card enlarges</li>
+                <li>Next → Item Helpers card enlarges</li>
+                <li>Next → Engine / assembly_order card enlarges</li>
+                <li>Next → advances to slide 4</li>
+              </ol>
+              <p>
+                The main Python building blocks are the Registry, Section,
+                Runtime State, item helpers, assembly order, and the engine that
+                assembles everything.
+              </p>
+              <ul>
+                <li data-step="1">
+                  <strong>Registry</strong> — the authored blueprint; runtime
+                  state is the per-call set of choices you make from that
+                  blueprint. This is what lets one registry produce different
+                  prompts without editing the registry itself.
+                  <em
+                    >You write it once; it never changes at call time.
+                    Everything that varies lives somewhere else.</em
+                  >
+                </li>
+                <li data-step="2">
+                  <strong>Section</strong> — a named bucket of authored items
+                  with a type, required flag, and array mode.
+                  <em
+                    >Sections are the slots; the registry is the board they live
+                    on.</em
+                  >
+                </li>
+                <li data-step="3">
+                  <strong>RegistryState / SectionState</strong> — per-call
+                  runtime choices: selected item, slider value, template vars.
+                  <em>Same registry, different state, different prompt.</em>
+                </li>
+                <li data-step="4">
+                  <strong>Item helpers</strong> — typed Python objects that live
+                  inside sections: Persona, Sentiment, StaticInjection,
+                  RuntimeInjection, OutputDirection, PromptEnding, Group.
+                  <em
+                    >Each type knows what it contributes and how to render
+                    itself.</em
+                  >
+                </li>
+                <ul data-step="5">
+                  <li>
+                    <strong>Engine + assembly_order</strong> 
+                assembly_order declares what tokens appear and in what sequence.
+                hydrate() resolves them against current state into the final
+                prompt string. At generation time, the engine walks
+                assembly_order, resolves the current state, fills template
+                variables, and produces the final prompt as a single string.
+                This is the core mechanic — a declared, auditable assembly path
+                instead of scattered string concatenation.
+                  </li>
+              </ul>
+              
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>4. Prompt Constructor</h3>
+              <p>
+                Prompt Constructor is the studio built on top of Prompt Libretto
+                for creating and testing chat model configurations.
+              </p>
+              <ul>
+                <li>
+                  <strong>Builder</strong> — Nocode, template-based interfacing for registries, configuring
+                  memory systems, or writing assembly logic
+                </li>
+                <li>
+                  <strong>Studio</strong> — loads registries and tunes runtime state
+                </li>
+                <li>
+                  <strong>Ensemble</strong> — t This tool is to explore how your
+                  registry design choices influence the behavior of LLM-driven conversations. 
+                </li>
+                <li>
+                  <strong>Chat Builder</strong> — "Chat Builder is a two-pane interface for building registries through conversation. Left pane is assistant chat; right pane is a live registry visualization.
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>5. Builder</h3>
+              <p>
+                The Builder is a visual authoring tool for registry JSON.
+                Instead of writing large JSON by hand, you author sections,
+                items, fragments, and groups through a structured UI.
+              </p>
+              <p>
+                The assembly order panel shows exactly which tokens will appear
+                in the final prompt and in what sequence. Section cards show
+                each bucket of authored content. Item detail shows context text,
+                conditional fragments gated by template variables, and
+                behavioral directive groups attached to each item.
+              </p>
+              <p>
+                Registries can be exported as JSON, imported back, or sent
+                directly to Studio for testing.
+              </p>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>6. Studio</h3>
+              <p>
+                The Studio is the live testing environment. Load a registry,
+                adjust runtime state, preview the assembled prompt, and generate
+                against your local model — all in one view.
+
+                ,
+                  preview the assembled prompt, generate against a live model,
+                  set and fine tune runtime state, and verify that the registry
+                  produces the behavior you intended before deploying it
+              </p>
+              <p>
+                State controls let you select which persona is active, set
+                slider values for sentiment dimensions, and choose a named route
+                that overrides assembly order or generation params. The
+                assembled prompt updates live as state changes. The generate
+                panel sends the prompt to your configured local model and
+                streams the response back.
+              </p>
+              <p>
+                Studio is where you verify that the registry produces the
+                behavior you intended before deploying it.
+              </p>
+            </section>
+
+            <section class="presenter-section" data-presenter-section>
+              <h3>8. Ensemble Mode</h3>
+              <p>
+                Each participant has memory, summarization, emotional state,
+                working notes, and retrieval systems. The scenario is guided by
+                domain, persona, tone, and behavioral constraints, but the
+                output is still non-deterministic.
+
+                 play out in a dynamic multi-agent
+                  scenario than to build a specific product, but it can be used
+                  for both.
+              </p>
+              <blockquote>
+                It's the difference between scripted dialogue and improv with
+                rules.
+              </blockquote>
+              <p>
+                The registry defines the stage, the character, and the
+                behavioral boundaries. What gets said inside those boundaries is
+                generated dynamically by the model.
+              </p>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>7. Memory System</h3>
+              <p>
+                Memory gives agents continuity without replaying the entire
+                conversation every turn.
+              </p>
+              <ul>
+                <li>
+                  retrieval memory embeds exchanges and injects relevant prior
+                  context as <code>memory_recall</code>
+                </li>
+                <li>
+                  classifier rules generate tags and apply temporary guidance
+                  for the current turn
+                </li>
+                <li>
+                  emotional state tracks warmth, trust, tension, and playfulness
+                  — accumulates and decays over time
+                </li>
+                <li>
+                  style blending lets behavior drift continuously without
+                  replacing the base persona
+                </li>
+                <li>
+                  working notes summarize what matters next and keep long
+                  interactions oriented
+                </li>
+              </ul>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>9. Chat LLM Builder</h3>
+              <p>
+                The Chat LLM Builder is a two-pane interface for building
+                registries through conversation. Left pane is assistant chat;
+                right pane is a live registry visualization. You describe what you want and it streams tool calls — that
+                build the registry incrementally.
+              </p>
+              <p>
+                         describe the AI you want in plain conversation — and an
+                  assistant builds the registry for you through that
+                  conversation. The interesting part? That assistant is itself
+                  running on a Prompt Libretto registry the whole time. So
+                  you're using the framework to build the framework. Which,
+                  honestly, is exactly the kind of thing it was designed for."
+              </p>
+              <blockquote>
+                A PromptLibretto registry assistant whose job is building
+                PromptLibretto registries.
+              </blockquote>
+            </section>
+            <section class="presenter-section" data-presenter-section>
+              <h3>10. Privacy + Close</h3>
+              <p>
+                For Studio and Ensemble, the browser asks Prompt Libretto to
+                assemble the prompt, then sends it directly to the local model.
+                CORS must allow the browser origin.
+              </p>
+              <p>
+                Prompt Libretto is not an LLM proxy. Prompts, model responses,
+                embeddings, and classifications stay local — on your machine.
+              </p>
+              <p>
+                The result is a framework for building adaptive conversational
+                agents, persistent character systems, and structured prompt
+                architectures that are non-deterministic but behaviorally
+                coherent.
+              </p>
+              <p>
+                The entire goal is to turn prompt engineering into a structured
+                runtime system. Instead of: manually concatenating prompt
+                strings …it provides: declarative registries, dynamic assembly,
+                memory systems, emotional modeling, style blending, as well as multi-agent
+                orchestration. The result is an adaptive framework for building adaptive
+                conversational agents that maintain persistent character systems, leveraging structured
+                prompt architectures to generate non-deterministic but behaviorally coherent
+                AI interactions. 
+              </p>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <div id="intro-script" class="tab-panel">
         <div class="script-wrap">
           <div class="script-header">
@@ -395,77 +794,90 @@
           </div>
           <div class="script-body" id="intro-script-text">
             <p>
-              Prompt Libretto is a Python library for building structured,
-              dynamic system prompts — at runtime, from a declarative model
-              called a registry.
+              The registry is a JSON document that defines every section of a
+              prompt, the relationships between them, and the assembly order
+              that controls what the model actually receives. At generation
+              time, the engine walks that order, resolves the current state,
+              fills template variables, and produces the final prompt as a
+              single string. That is the core mechanic — a declared, auditable
+              assembly path instead of scattered string concatenation.
             </p>
 
             <p>
-              The problem it solves is this: as soon as you want a language
-              model's behavior to vary — by persona, mood, context, or
-              conversation state — hardcoding prompt strings stops working. You
-              end up with concatenated strings scattered across your codebase,
-              no consistency, and no way to audit what the model is actually
-              receiving. Prompt Libretto replaces that with a registry: a JSON
-              document that defines every section of a prompt, how sections
-              relate to each other, what's required, what's optional, and what
-              gets selected or randomized at call time. The engine assembles the
-              final prompt from that spec every time.
+              The problem it replaces is this: as soon as you want a language
+              model's behavior to vary by persona, mood, context, or
+              conversation state, hardcoding prompt strings stops working. You
+              end up with concatenated strings scattered across the codebase, no
+              consistency, and no way to audit what the model is actually
+              receiving. Prompt Libretto is the library that replaces that with
+              a registry-based architecture.
             </p>
 
             <p>
-              This tool — Prompt Constructor — is one example of how you can
-              build on top of that. It's a studio for creating chat models: you
-              get a visual builder for authoring registries, a studio for
-              testing them against a live model, and an ensemble mode that runs
-              two registry-driven agents in conversation with each other.
+              The main building blocks are Registry, Section, RegistryState and
+              SectionState, and a set of item helpers — Persona, Sentiment,
+              Group, StaticInjection, RuntimeInjection, OutputDirection, and
+              PromptEnding. The Registry is the complete blueprint, loaded once
+              and read-only at runtime. Sections are named buckets of authored
+              items. RegistryState and SectionState hold per-call choices —
+              which item is selected, what the slider value is, what template
+              variables are filled in. The engine's hydrate method resolves all
+              of that into the final prompt string.
             </p>
 
             <p>
-              One important setup detail: because the browser talks directly to
-              your local model server, that model server has to allow this
-              browser origin with CORS. For Ollama on Windows, you can start it
-              with OLLAMA_ORIGINS set to http://127.0.0.1:8181, then run
-              ollama serve. Without that, the browser blocks the request before
-              it ever reaches the model, so the server may look quiet even
-              though generation is failing.
+              Prompt Constructor is the studio built on top of that library. It
+              has four surfaces: the Builder for visually authoring registry
+              JSON, the Studio for loading a registry, tuning runtime state,
+              previewing the assembled prompt, and generating against a live
+              model, the Chat Builder for building registries through
+              conversation, and Ensemble for running two registry-driven agents
+              in one autonomous conversation.
             </p>
 
             <p>
-              The privacy model is simple: browser to your local model, and
-              back. The promptlibretto server running at http://127.0.0.1:8181
-              is not the LLM proxy. It assembles the registry into prompt text
-              and returns that prompt to the browser. Then the browser sends the
-              prompt to your local generation, classification, or embedding
-              model. Your prompts and model responses stay on your machine and
-              do not travel through the promptlibretto server.
-            </p>
-
-            <p>
-              With memory enabled, the server may coordinate the memory index,
-              but model calls still happen from the browser. The server asks the
-              browser for embeddings over a lightweight WebSocket; the browser
-              sends text to your local embedding model, gets vectors back, and
-              returns those vectors to the server index. The server stores the
-              searchable vector data, not the raw text sent to the local model.
+              The memory system gives agents continuity without replaying the
+              entire conversation every turn. Each exchange is embedded into a
+              vector and stored locally. Before the next response, relevant
+              prior exchanges are retrieved and injected as memory_recall. A
+              classifier can also inspect incoming messages, generate tags, and
+              fire rules that inject temporary guidance or modify emotional
+              state variables like warmth, trust, tension, and playfulness.
+              Those states accumulate and decay over time, and style blending
+              lets them shift behavior gradually without replacing the base
+              persona. Working notes give the model a lightweight scratchpad it
+              updates every few turns to maintain orientation over long
+              interactions.
             </p>
 
             <p>
               Ensemble is where it gets more interesting. Each participant has
-              memory — an embedding model indexes the conversation as it
-              happens, a summarizer compresses older context into a rolling
-              system summary, and working notes let each agent track its own
-              read on the situation. The scenario is steered — you define the
-              domain, the persona, the tone — but the output is
-              non-deterministic. The model generates freely within those
-              constraints, so each run produces something unique while still
-              staying true to the theme.
+              memory, summarization, emotional state, working notes, and
+              retrieval. The scenario is steered by domain, persona, tone, and
+              behavioral constraints, but the output is non-deterministic. Think
+              of it as the difference between scripted dialogue and improv with
+              rules. The registry sets the stage and the character. What
+              actually gets said is up to the model.
             </p>
 
             <p>
-              Think of it as the difference between scripted dialogue and improv
-              with rules. The registry sets the stage and the character. What
-              actually gets said is up to the model.
+              The Chat Builder is a two-pane interface — assistant chat on the
+              left, live registry visualization on the right. You describe what
+              you want and it streams tool calls that build the registry
+              incrementally. Unlike Studio and Ensemble, the browser does not
+              call the model directly here. Requests go to the FastAPI server at
+              /api/builder/chat, which calls the model server-side, so no CORS
+              configuration is needed.
+            </p>
+
+            <p>
+              For Studio and Ensemble, the browser does talk directly to your
+              local model server, so that server must allow the browser origin
+              through CORS. The privacy model is simple: prompt assembly happens
+              on the Prompt Libretto server, the assembled prompt is returned to
+              the browser, and the browser sends it directly to your local
+              model. Prompt Libretto is not an LLM proxy. Prompts, responses,
+              embeddings, and classifications stay on your machine.
             </p>
           </div>
         </div>
@@ -504,8 +916,8 @@
 
             <p>
               Personas give the prank caller a mask. There are two here: the
-              old_lady persona, which mishears things and wanders off topic,
-              and my_dad_owns_this_company, which is the selected persona. That
+              old_lady persona, which mishears things and wanders off topic, and
+              my_dad_owns_this_company, which is the selected persona. That
               selected persona also has a behavior group, and its array mode
               picks two of those group items at random so the call can vary
               without rewriting the persona itself.
@@ -537,8 +949,8 @@
               then make one up with total confidence.
             </p>
             <p>
-              Groups are where reusable behavioral snippets live. For example,
-              a group like when_responding can provide a pre-context line and a
+              Groups are where reusable behavioral snippets live. For example, a
+              group like when_responding can provide a pre-context line and a
               list of response behaviors, then the selected persona or sentiment
               can attach that group without duplicating the same instructions in
               multiple places.
@@ -609,9 +1021,9 @@
             </p>
 
             <p>
-              The output policy is enforced silently in the background. This
-              one sets a minimum length of 80 and a maximum length of 1000, so
-              the prankster has enough room to answer but cannot ramble forever.
+              The output policy is enforced silently in the background. This one
+              sets a minimum length of 80 and a maximum length of 1000, so the
+              prankster has enough room to answer but cannot ramble forever.
             </p>
 
             <p>
@@ -658,6 +1070,79 @@
       }
 
       // ── Prank Caller registry data ────────────────────────────────
+      const PRESENTER_KEY = 'promptlibretto.presenter.next';
+      let presenterIndex = Number(localStorage.getItem(PRESENTER_KEY) || '0');
+
+      function buildPresenterMap() {
+        const sections = [...document.querySelectorAll('[data-presenter-section]')];
+        const map = [];
+        sections.forEach((sec, sectionIdx) => {
+          const steps = parseInt(sec.dataset.presenterSteps || '0', 10);
+          map.push({ sectionIdx, subStep: 0 });
+          for (let s = 1; s <= steps; s++) map.push({ sectionIdx, subStep: s });
+        });
+        return { sections, map };
+      }
+
+      function updatePresenterUi() {
+        const status = document.getElementById('presenter-status');
+        const { sections, map } = buildPresenterMap();
+        const clamped = Math.min(presenterIndex, map.length - 1);
+        const { sectionIdx, subStep } = map[clamped];
+
+        if (status) status.textContent = `slide trigger: ${presenterIndex}`;
+
+        sections.forEach((section, idx) => {
+          section.classList.toggle('active', idx === sectionIdx);
+          section.querySelectorAll('[data-step]').forEach(el => {
+            el.classList.remove('step-active');
+          });
+          if (idx === sectionIdx && subStep > 0) {
+            for (let s = 1; s <= subStep; s++) {
+              section.querySelector(`[data-step="${s}"]`)?.classList.add('step-active');
+            }
+          }
+        });
+
+        sections[sectionIdx]?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+
+      function advancePresentation() {
+        presenterIndex += 1;
+        localStorage.setItem(PRESENTER_KEY, String(presenterIndex));
+        updatePresenterUi();
+      }
+
+      function resetPresentation() {
+        presenterIndex = 0;
+        localStorage.setItem(PRESENTER_KEY, String(presenterIndex));
+        updatePresenterUi();
+      }
+
+      function openPresentation() {
+        window.open('intro.html?presenter=1', 'promptlibretto_presentation');
+      }
+
+      document.addEventListener('keydown', (e) => {
+        const active = document
+          .getElementById('presenter-script')
+          ?.classList.contains('active');
+        if (!active) return;
+        if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          advancePresentation();
+        }
+      });
+
+      window.addEventListener('storage', (e) => {
+        if (e.key === PRESENTER_KEY) {
+          presenterIndex = Number(e.newValue || '0');
+          updatePresenterUi();
+        }
+      });
+
+      updatePresenterUi();
+
       const fullJson = {
         registry: {
           version: 2,
@@ -975,13 +1460,17 @@
 
       function renderStateCard(section, title, sectionData) {
         const bakedState = {};
-        ['selected', 'array_modes', 'slider', 'slider_random', 'section_random'].forEach(
-          (key) => {
-            if (sectionData && sectionData[key] !== undefined) {
-              bakedState[key] = sectionData[key];
-            }
+        [
+          'selected',
+          'array_modes',
+          'slider',
+          'slider_random',
+          'section_random',
+        ].forEach((key) => {
+          if (sectionData && sectionData[key] !== undefined) {
+            bakedState[key] = sectionData[key];
           }
-        );
+        });
         const state =
           (fullJson.state && fullJson.state[title]) ||
           (Object.keys(bakedState).length ? bakedState : null);
@@ -1254,7 +1743,7 @@
 
         memory_config:
           'Memory configuration defines where the runtime memory services live and how semantic recall operates. The classifier URL and model handle tag detection for rules like order_number, while the embedding service converts conversation turns into vectors for semantic search and retrieval. Here classifier use is enabled, top_k is 45 for broad recall, and prune_keep is 3 so the retained memory set stays tight after retrieval.',
-        };
+      };
 
       function scriptBlock(key) {
         const text = SECTION_SCRIPTS[key];
@@ -1370,10 +1859,9 @@
           }
         });
       }
-      
 
       renderRegistry();
     </script>
   </body>
 </html>
-<Details></Details>
+<details></details>
